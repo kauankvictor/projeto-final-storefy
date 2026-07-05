@@ -1,0 +1,17 @@
+/* Reset padrão de estilos */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+  background-color: #f8fafc; /* Cinza bem claro moderno */
+  color: #1e1b4b; /* O Deep Navy para os textos */
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
