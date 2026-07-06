@@ -13,15 +13,13 @@ export default function NovoProduto() {
   const [categoria, setCategoria] = useState('')
   const [preco, setPreco] = useState('')
   const [quantidade, setQuantidade] = useState('')
+  const [descricao, setDescricao] = useState('') // Novo estado para descrição
   
-  // Estado para armazenar as múltiplas imagens
   const [imagensPreviews, setImagensPreviews] = useState([])
-  
   const [categorias, setCategorias] = useState(['Perfumaria', 'Skincare', 'Maquiagem', 'Cabelos', 'Corpo e Banho'])
   const [erro, setErro] = useState('')
   const [sucesso, setSucesso] = useState(false)
   const [salvando, setSalvando] = useState(false)
-
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
   useEffect(() => {
@@ -58,7 +56,6 @@ export default function NovoProduto() {
       }
       reader.readAsDataURL(file)
     })
-    
     setErro('')
   }
 
@@ -66,14 +63,12 @@ export default function NovoProduto() {
     setImagensPreviews(prev => prev.filter((_, index) => index !== indexParaRemover))
   }
 
-  // Comprime todas as imagens automaticamente para garantir que caibam no Firestore
   const processarECompressarImagens = async () => {
     const promessasDeCompressao = imagensPreviews.map(imagemSrc => {
       return new Promise((resolve) => {
         const img = new Image()
         img.onload = () => {
           const canvas = document.createElement('canvas')
-          // Reduz a resolução para economizar espaço no banco de dados
           const tamanhoMaximo = 500
           let largura = img.width
           let altura = img.height
@@ -122,12 +117,13 @@ export default function NovoProduto() {
       const arrayImagensComprimidas = await processarECompressarImagens()
 
       const produtoNovo = {
-        nome: nome,
-        codigoBarras: codigoBarras,
+        nome,
+        codigoBarras,
         categoria: categoria || 'Sem Categoria',
         preco: parseFloat(preco),
         quantidade: quantidade === '' ? 0 : parseInt(quantidade, 10),
-        fotos: arrayImagensComprimidas, // Agora salva um array de fotos
+        descricao: descricao.trim(),
+        fotos: arrayImagensComprimidas,
         dataCadastro: new Date().toISOString()
       }
 
@@ -140,6 +136,7 @@ export default function NovoProduto() {
       setCategoria('')
       setPreco('')
       setQuantidade('')
+      setDescricao('')
       setImagensPreviews([])
 
       setTimeout(() => setSucesso(false), 3000)
@@ -159,7 +156,7 @@ export default function NovoProduto() {
           <div style={{ background: 'white', padding: '40px', borderRadius: '20px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', maxWidth: '400px', width: '100%', boxSizing: 'border-box' }}>
             <CheckCircle size={64} color="#10b981" />
             <h2 style={{ fontSize: '24px', color: '#1e1b4b', margin: 0, fontWeight: 'bold' }}>Cadastrado com Sucesso</h2>
-            <p style={{ color: '#64748b', margin: 0, lineHeight: '1.4' }}>O produto foi enviado para a nuvem e já está disponível no catálogo.</p>
+            <p style={{ color: '#64748b', margin: 0, lineHeight: '1.4' }}>O produto foi enviado para a nuvem.</p>
           </div>
         </div>
       )}
@@ -230,33 +227,38 @@ export default function NovoProduto() {
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Nome do Produto *</label>
-            <input type="text" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex: Hidratante Cereja" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', boxSizing: 'border-box', width: '100%' }} />
+            <input type="text" value={nome} onChange={(e) => setNome(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', boxSizing: 'border-box', width: '100%' }} />
           </div>
 
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '20px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
               <label style={{ fontWeight: '600', color: '#475569' }}>Código de Barras</label>
-              <input type="text" value={codigoBarras} onChange={(e) => setCodigoBarras(e.target.value)} placeholder="0000000000000" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', boxSizing: 'border-box', width: '100%' }} />
+              <input type="text" value={codigoBarras} onChange={(e) => setCodigoBarras(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', boxSizing: 'border-box', width: '100%' }} />
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
               <label style={{ fontWeight: '600', color: '#475569' }}>Categoria</label>
-              <input type="text" list="lista-categorias" value={categoria} onChange={(e) => setCategoria(e.target.value)} placeholder="Selecione ou crie nova" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', boxSizing: 'border-box', width: '100%' }} />
+              <input type="text" list="lista-categorias" value={categoria} onChange={(e) => setCategoria(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', boxSizing: 'border-box', width: '100%' }} />
               <datalist id="lista-categorias">
                 {categorias.map(cat => <option key={cat} value={cat} />)}
               </datalist>
             </div>
           </div>
 
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Descrição do Produto</label>
+            <textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Escreva os detalhes, tamanho, marca..." style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', boxSizing: 'border-box', width: '100%', minHeight: '100px', resize: 'vertical' }} />
+          </div>
+
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '20px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
               <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Preço (R$) *</label>
-              <input type="number" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} placeholder="0.00" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', boxSizing: 'border-box', width: '100%' }} />
+              <input type="number" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', boxSizing: 'border-box', width: '100%' }} />
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
               <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Qtd. Estoque</label>
-              <input type="number" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} placeholder="0" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', boxSizing: 'border-box', width: '100%' }} />
+              <input type="number" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', boxSizing: 'border-box', width: '100%' }} />
             </div>
           </div>
 

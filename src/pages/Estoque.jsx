@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Search, Plus, Edit2, Image as ImageIcon, Filter, FileDown } from 'lucide-react'
+import { Search, Plus, Edit2, Image as ImageIcon, Filter, FileDown, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
-// Importações do Firebase
 import { collection, getDocs } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
 
@@ -12,8 +11,8 @@ export default function Estoque() {
   const [categoriaFiltro, setCategoriaFiltro] = useState('Todas')
   const [produtos, setProdutos] = useState([])
   const [carregando, setCarregando] = useState(true)
+  const [produtoSelecionado, setProdutoSelecionado] = useState(null)
 
-  // ================= ESTADO RESPONSIVO =================
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
   useEffect(() => {
@@ -32,7 +31,6 @@ export default function Estoque() {
         }))
         
         setProdutos(listaProdutos)
-        
         localStorage.setItem('storefy_produtos', JSON.stringify(listaProdutos))
       } catch (error) {
         console.error("Erro ao buscar produtos na nuvem:", error)
@@ -58,7 +56,6 @@ export default function Estoque() {
     return matchBusca && matchCategoria
   })
 
-  // ================= GERADOR DE PDF DO ESTOQUE =================
   const gerarPDFEstoque = () => {
     const dadosLoja = JSON.parse(localStorage.getItem('storefy_dados_loja')) || {
       nomeLoja: 'Storefy', ceo: 'Administrador', telefone: 'Sem telefone', email: 'Sem email'
@@ -70,7 +67,7 @@ export default function Estoque() {
     const htmlPDF = `
       <html>
         <head>
-          <title>Relatório de Estoque : ${dadosLoja.nomeLoja}</title>
+          <title>Relatório de Estoque</title>
           <style>
             body { font-family: 'Helvetica', 'Arial', sans-serif; color: #1e293b; padding: 40px; margin: 0; line-height: 1.5; }
             .header { border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 30px; display: flex; justify-content: space-between; }
@@ -141,9 +138,60 @@ export default function Estoque() {
     janelaImpressao.document.close()
   }
 
+  const pegarPrimeiraFoto = (produto) => {
+    if (produto.fotos && produto.fotos.length > 0) return produto.fotos[0]
+    if (produto.imagem) return produto.imagem
+    return null
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
+      {/* MODAL DE DETALHES DO PRODUTO */}
+      {produtoSelecionado && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 4000, padding: '20px' }} onClick={() => setProdutoSelecionado(null)}>
+          <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '400px', overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }} onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setProdutoSelecionado(null)} style={{ position: 'absolute', top: '12px', right: '12px', background: 'rgba(0,0,0,0.5)', color: 'white', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 10 }}>
+              <X size={16} />
+            </button>
+            
+            <div style={{ width: '100%', height: '300px', display: 'flex', overflowX: 'auto', scrollSnapType: 'x mandatory', background: '#f8fafc' }}>
+              {(() => {
+                const fotosParaMostrar = (produtoSelecionado.fotos && produtoSelecionado.fotos.length > 0) ? produtoSelecionado.fotos : (produtoSelecionado.imagem ? [produtoSelecionado.imagem] : [])
+                if (fotosParaMostrar.length === 0) {
+                  return <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><ImageIcon size={48} color="#cbd5e1" /></div>
+                }
+                return fotosParaMostrar.map((foto, idx) => (
+                  <img key={idx} src={foto} alt={`Foto ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', flexShrink: 0, scrollSnapAlign: 'start' }} />
+                ))
+              })()}
+            </div>
+
+            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase' }}>{produtoSelecionado.categoria}</span>
+                <h2 style={{ fontSize: '20px', color: '#1e1b4b', margin: '4px 0 0 0', fontWeight: 'bold' }}>{produtoSelecionado.nome}</h2>
+                <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0 0', fontFamily: 'monospace' }}>Código: {produtoSelecionado.codigoBarras || 'Não cadastrado'}</p>
+              </div>
+              
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9', padding: '12px 0' }}>
+                <span style={{ fontSize: '24px', color: '#4f46e5', fontWeight: '900' }}>{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(produtoSelecionado.preco)}</span>
+                <span style={{ background: produtoSelecionado.quantidade > 0 ? '#d1fae5' : '#fee2e2', color: produtoSelecionado.quantidade > 0 ? '#059669' : '#dc2626', padding: '6px 12px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold' }}>
+                  {produtoSelecionado.quantidade > 0 ? `Estoque: ${produtoSelecionado.quantidade}` : 'Esgotado'}
+                </span>
+              </div>
+
+              <div>
+                <h4 style={{ fontSize: '13px', color: '#475569', fontWeight: 'bold', margin: '0 0 6px 0' }}>Descrição</h4>
+                <p style={{ fontSize: '14px', color: '#64748b', margin: 0, lineHeight: '1.5', maxHeight: '120px', overflowY: 'auto' }}>
+                  {produtoSelecionado.descricao || 'Nenhuma descrição detalhada disponível.'}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', flexWrap: 'wrap', gap: '16px', flexDirection: isMobile ? 'column' : 'row' }}>
         <div>
           <h1 style={{ fontSize: isMobile ? '24px' : '28px', color: '#1e1b4b' }}>Estoque</h1>
@@ -166,7 +214,6 @@ export default function Estoque() {
         </div>
       </header>
 
-      {/* ÁREA DE BUSCA E FILTROS */}
       <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexDirection: isMobile ? 'column' : 'row' }}>
         <div style={{ display: 'flex', alignItems: 'center', background: 'white', padding: '10px 16px', borderRadius: '12px', flexGrow: 1, width: isMobile ? '100%' : 'auto', maxWidth: isMobile ? '100%' : '400px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', boxSizing: 'border-box' }}>
           <Search size={20} color="#64748b" />
@@ -199,58 +246,65 @@ export default function Estoque() {
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '140px' : '240px'}, 1fr))`, gap: isMobile ? '12px' : '24px' }}>
-          {produtosFiltrados.map((produto) => (
-            <div key={produto.id} style={{ background: 'white', borderRadius: '16px', padding: isMobile ? '12px' : '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', position: 'relative' }}>
-              
-              <button 
-                onClick={() => navigate(`/estoque/${produto.id}`)}
-                style={{ position: 'absolute', top: isMobile ? '16px' : '24px', right: isMobile ? '16px' : '24px', background: 'rgba(255,255,255,0.9)', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}
+          {produtosFiltrados.map((produto) => {
+            const fotoPrincipal = pegarPrimeiraFoto(produto)
+
+            return (
+              <div 
+                key={produto.id} 
+                onClick={() => setProdutoSelecionado(produto)}
+                style={{ background: 'white', borderRadius: '16px', padding: isMobile ? '12px' : '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', position: 'relative', cursor: 'pointer' }}
               >
-                <Edit2 size={16} color="#4f46e5" />
-              </button>
-
-              <div style={{ width: '100%', height: isMobile ? '120px' : '220px', borderRadius: '12px', overflow: 'hidden', background: '#f8fafc', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {produto.imagem ? (
-                  <img src={produto.imagem} alt={produto.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                ) : (
-                  <ImageIcon size={32} color="#cbd5e1" />
-                )}
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
-                <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  {produto.categoria}
-                </span>
                 
-                <h3 style={{ fontSize: isMobile ? '13px' : '16px', color: '#1e1b4b', fontWeight: 'bold', margin: '4px 0 12px 0', lineHeight: '1.3' }}>
-                  {produto.nome}
-                </h3>
-                
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '4px' : '0' }}>
-                  <span style={{ fontSize: isMobile ? '15px' : '18px', color: '#4f46e5', fontWeight: '800' }}>
-                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(produto.preco)}
-                  </span>
-                  
-                  {produto.quantidade > 0 ? (
-                    <span style={{ background: '#d1fae5', color: '#059669', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold' }}>
-                      Estoque: {produto.quantidade}
-                    </span>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); navigate(`/estoque/${produto.id}`) }}
+                  style={{ position: 'absolute', top: isMobile ? '16px' : '24px', right: isMobile ? '16px' : '24px', background: 'rgba(255,255,255,0.9)', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}
+                >
+                  <Edit2 size={16} color="#4f46e5" />
+                </button>
+
+                <div style={{ width: '100%', height: isMobile ? '120px' : '220px', borderRadius: '12px', overflow: 'hidden', background: '#f8fafc', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {fotoPrincipal ? (
+                    <img src={fotoPrincipal} alt={produto.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   ) : (
-                    <span style={{ background: '#fee2e2', color: '#dc2626', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold' }}>
-                      Esgotado
-                    </span>
+                    <ImageIcon size={32} color="#cbd5e1" />
                   )}
                 </div>
 
-                {/* CÓDIGO DE BARRAS SUTIL NO RODAPÉ */}
-                <div style={{ marginTop: '12px', borderTop: '1px dashed #e2e8f0', paddingTop: '8px', textAlign: 'center' }}>
-                  <span style={{ fontSize: '10px', color: '#94a3b8', fontFamily: 'monospace' }}>
-                    {produto.codigoBarras ? `Cód: ${produto.codigoBarras}` : 'Sem código de barras'}
+                <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
+                  <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    {produto.categoria}
                   </span>
+                  
+                  <h3 style={{ fontSize: isMobile ? '13px' : '16px', color: '#1e1b4b', fontWeight: 'bold', margin: '4px 0 12px 0', lineHeight: '1.3' }}>
+                    {produto.nome}
+                  </h3>
+                  
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '4px' : '0' }}>
+                    <span style={{ fontSize: isMobile ? '15px' : '18px', color: '#4f46e5', fontWeight: '800' }}>
+                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(produto.preco)}
+                    </span>
+                    
+                    {produto.quantidade > 0 ? (
+                      <span style={{ background: '#d1fae5', color: '#059669', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold' }}>
+                        Estoque: {produto.quantidade}
+                      </span>
+                    ) : (
+                      <span style={{ background: '#fee2e2', color: '#dc2626', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold' }}>
+                        Esgotado
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ marginTop: '12px', borderTop: '1px dashed #e2e8f0', paddingTop: '8px', textAlign: 'center' }}>
+                    <span style={{ fontSize: '10px', color: '#94a3b8', fontFamily: 'monospace' }}>
+                      {produto.codigoBarras ? `Cód: ${produto.codigoBarras}` : 'Sem código de barras'}
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
 
           {produtosFiltrados.length === 0 && (
             <div style={{ gridColumn: '1 / -1', padding: '40px', textAlign: 'center', color: '#64748b' }}>

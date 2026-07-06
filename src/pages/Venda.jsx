@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Search, Filter, ShoppingCart, Plus, Minus, Trash2, CheckCircle, AlertCircle, Tag, UserCheck, X, Receipt, UserPlus } from 'lucide-react'
+import { Search, Filter, ShoppingCart, Plus, Minus, Trash2, CheckCircle, AlertCircle, Tag, UserCheck, X, Receipt, UserPlus, Image as ImageIcon } from 'lucide-react'
 
-// Importações cruciais do Firebase
 import { collection, getDocs, addDoc, doc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
 
@@ -18,6 +17,7 @@ export default function Venda() {
   const [descontoValor, setDescontoValor] = useState('')
   const [modalConfirmacao, setModalConfirmacao] = useState(false)
   const [vendedorNome, setVendedorNome] = useState('')
+  const [produtoSelecionado, setProdutoSelecionado] = useState(null)
 
   const [listaClientes, setListaClientes] = useState([])
   const [clienteSelecionado, setClienteSelecionado] = useState(null)
@@ -29,7 +29,6 @@ export default function Venda() {
   const [sucesso, setSucesso] = useState(false)
   const [processando, setProcessando] = useState(false)
 
-  // ================= ESTADO RESPONSIVO =================
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
   useEffect(() => {
@@ -38,7 +37,6 @@ export default function Venda() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  // ================= BUSCA DE DADOS NA NUVEM =================
   useEffect(() => {
     const carregarDadosNuvem = async () => {
       try {
@@ -101,7 +99,7 @@ export default function Venda() {
       setCarrinho(carrinho.filter(item => item.id !== id))
     } else {
       setCarrinho(carrinho.map(item => 
-        item.id === id ? { ...item, ...item, quantidadeComprada: item.quantidadeComprada - 1 } : item
+        item.id === id ? { ...item, quantidadeComprada: item.quantidadeComprada - 1 } : item
       ))
     }
   }
@@ -247,6 +245,12 @@ export default function Venda() {
     document.getElementById('carrinho-mobile').scrollIntoView({ behavior: 'smooth' })
   }
 
+  const pegarPrimeiraFoto = (produto) => {
+    if (produto.fotos && produto.fotos.length > 0) return produto.fotos[0]
+    if (produto.imagem) return produto.imagem
+    return null
+  }
+
   return (
     <div style={{ 
       display: 'flex', 
@@ -257,7 +261,6 @@ export default function Venda() {
       position: 'relative' 
     }}>
       
-      {/* ================= MODAL CENTRAL DE SUCESSO ================= */}
       {sucesso && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 3000, padding: '20px' }}>
           <div style={{ background: 'white', padding: '40px', borderRadius: '20px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
@@ -268,7 +271,51 @@ export default function Venda() {
         </div>
       )}
 
-      {/* ================= LADO ESQUERDO: PRODUTOS ================= */}
+      {/* MODAL DE DETALHES DO PRODUTO */}
+      {produtoSelecionado && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 4000, padding: '20px' }} onClick={() => setProdutoSelecionado(null)}>
+          <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '400px', overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }} onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setProdutoSelecionado(null)} style={{ position: 'absolute', top: '12px', right: '12px', background: 'rgba(0,0,0,0.5)', color: 'white', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 10 }}>
+              <X size={16} />
+            </button>
+            
+            <div style={{ width: '100%', height: '300px', display: 'flex', overflowX: 'auto', scrollSnapType: 'x mandatory', background: '#f8fafc' }}>
+              {(() => {
+                const fotosParaMostrar = (produtoSelecionado.fotos && produtoSelecionado.fotos.length > 0) ? produtoSelecionado.fotos : (produtoSelecionado.imagem ? [produtoSelecionado.imagem] : [])
+                if (fotosParaMostrar.length === 0) {
+                  return <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><ImageIcon size={48} color="#cbd5e1" /></div>
+                }
+                return fotosParaMostrar.map((foto, idx) => (
+                  <img key={idx} src={foto} alt={`Foto ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', flexShrink: 0, scrollSnapAlign: 'start' }} />
+                ))
+              })()}
+            </div>
+
+            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase' }}>{produtoSelecionado.categoria}</span>
+                <h2 style={{ fontSize: '20px', color: '#1e1b4b', margin: '4px 0 0 0', fontWeight: 'bold' }}>{produtoSelecionado.nome}</h2>
+                <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0 0', fontFamily: 'monospace' }}>Código: {produtoSelecionado.codigoBarras || 'Não cadastrado'}</p>
+              </div>
+              
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9', padding: '12px 0' }}>
+                <span style={{ fontSize: '24px', color: '#4f46e5', fontWeight: '900' }}>{formatoMoeda(produtoSelecionado.preco)}</span>
+                <span style={{ background: produtoSelecionado.quantidade > 0 ? '#d1fae5' : '#fee2e2', color: produtoSelecionado.quantidade > 0 ? '#059669' : '#dc2626', padding: '6px 12px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold' }}>
+                  {produtoSelecionado.quantidade > 0 ? `Estoque: ${produtoSelecionado.quantidade}` : 'Esgotado'}
+                </span>
+              </div>
+
+              <div>
+                <h4 style={{ fontSize: '13px', color: '#475569', fontWeight: 'bold', margin: '0 0 6px 0' }}>Descrição</h4>
+                <p style={{ fontSize: '14px', color: '#64748b', margin: 0, lineHeight: '1.5', maxHeight: '120px', overflowY: 'auto' }}>
+                  {produtoSelecionado.descricao || 'Nenhuma descrição detalhada disponível.'}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ 
         flex: '2', 
         display: 'flex', 
@@ -298,30 +345,37 @@ export default function Venda() {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '140px' : '200px'}, 1fr))`, gap: '16px' }}>
-          {produtosFiltrados.map((produto) => (
-            <div key={produto.id} style={{ background: 'white', borderRadius: '16px', padding: isMobile ? '12px' : '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column' }}>
-              <div style={{ width: '100%', height: isMobile ? '100px' : '140px', borderRadius: '8px', overflow: 'hidden', background: '#f8fafc', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {produto.imagem ? <img src={produto.imagem} alt={produto.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <ShoppingCart size={32} color="#cbd5e1" />}
-              </div>
-              <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase' }}>{produto.categoria}</span>
-              <h3 style={{ fontSize: isMobile ? '13px' : '14px', color: '#1e1b4b', fontWeight: 'bold', margin: '4px 0', lineHeight: '1.2' }}>{produto.nome}</h3>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', paddingTop: '8px' }}>
-                <span style={{ fontSize: isMobile ? '14px' : '16px', color: '#4f46e5', fontWeight: '800' }}>{formatoMoeda(produto.preco)}</span>
-                <span style={{ fontSize: '11px', color: produto.quantidade > 0 ? '#64748b' : '#ef4444', fontWeight: 'bold' }}>Qtd: {produto.quantidade}</span>
-              </div>
-              
-              <button 
-                onClick={() => adicionarAoCarrinho(produto)}
-                style={{ background: '#f1f5f9', color: '#4f46e5', border: '1px solid #e2e8f0', padding: '10px', borderRadius: '8px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', fontWeight: 'bold', cursor: 'pointer', marginTop: '12px', fontSize: isMobile ? '13px' : '14px' }}
+          {produtosFiltrados.map((produto) => {
+            const fotoPrincipal = pegarPrimeiraFoto(produto)
+
+            return (
+              <div 
+                key={produto.id} 
+                onClick={() => setProdutoSelecionado(produto)}
+                style={{ background: 'white', borderRadius: '16px', padding: isMobile ? '12px' : '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', cursor: 'pointer' }}
               >
-                <Plus size={16} /> {isMobile ? 'Add' : 'Adicionar'}
-              </button>
-            </div>
-          ))}
+                <div style={{ width: '100%', height: isMobile ? '100px' : '140px', borderRadius: '8px', overflow: 'hidden', background: '#f8fafc', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {fotoPrincipal ? <img src={fotoPrincipal} alt={produto.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <ShoppingCart size={32} color="#cbd5e1" />}
+                </div>
+                <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase' }}>{produto.categoria}</span>
+                <h3 style={{ fontSize: isMobile ? '13px' : '14px', color: '#1e1b4b', fontWeight: 'bold', margin: '4px 0', lineHeight: '1.2' }}>{produto.nome}</h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', paddingTop: '8px' }}>
+                  <span style={{ fontSize: isMobile ? '14px' : '16px', color: '#4f46e5', fontWeight: '800' }}>{formatoMoeda(produto.preco)}</span>
+                  <span style={{ fontSize: '11px', color: produto.quantidade > 0 ? '#64748b' : '#ef4444', fontWeight: 'bold' }}>Qtd: {produto.quantidade}</span>
+                </div>
+                
+                <button 
+                  onClick={(e) => { e.stopPropagation(); adicionarAoCarrinho(produto); }}
+                  style={{ background: '#f1f5f9', color: '#4f46e5', border: '1px solid #e2e8f0', padding: '10px', borderRadius: '8px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', fontWeight: 'bold', cursor: 'pointer', marginTop: '12px', fontSize: isMobile ? '13px' : '14px' }}
+                >
+                  <Plus size={16} /> {isMobile ? 'Add' : 'Adicionar'}
+                </button>
+              </div>
+            )
+          })}
         </div>
       </div>
 
-      {/* ================= LADO DIREITO: CARRINHO (SÓ APARECE SE TIVER ITENS) ================= */}
       {carrinho.length > 0 && (
         <div id="carrinho-mobile" style={{ 
           flex: isMobile ? 'none' : '1', 
@@ -373,7 +427,7 @@ export default function Venda() {
                 
                 {clienteSelecionado ? (
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'white', padding: '10px', borderRadius: '8px', border: '1px solid #ef4444' }}>
-                    <span style={{ color: '#1e1b4b', fontWeight: 'bold', fontSize: '14px' }}>👤 {clienteSelecionado.nome}</span>
+                    <span style={{ color: '#1e1b4b', fontWeight: 'bold', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}><UserCheck size={16}/> {clienteSelecionado.nome}</span>
                     <button onClick={() => setClienteSelecionado(null)} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer' }}><X size={16} /></button>
                   </div>
                 ) : criandoClienteRapido ? (
@@ -420,7 +474,6 @@ export default function Venda() {
         </div>
       )}
 
-      {/* === MODAL DE RESUMO, DESCONTO E IDENTIFICAÇÃO === */}
       {modalConfirmacao && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: isMobile ? '16px' : '20px' }}>
           <div style={{ background: 'white', padding: isMobile ? '24px' : '32px', borderRadius: '20px', width: '100%', maxWidth: '500px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)' }}>
@@ -446,8 +499,8 @@ export default function Venda() {
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', fontSize: '15px' }}>
               <span style={{ color: '#64748b', fontWeight: '600' }}>Tipo de Venda:</span>
-              <span style={{ color: formaPagamento === 'Anotar (Fiado)' ? '#ef4444' : '#1e1b4b', fontWeight: 'bold', background: formaPagamento === 'Anotar (Fiado)' ? '#fee2e2' : '#e0e7ff', padding: '4px 12px', borderRadius: '6px' }}>
-                {formaPagamento === 'Anotar (Fiado)' ? `Fiado 👤 ${clienteSelecionado?.nome}` : formaPagamento}
+              <span style={{ color: formaPagamento === 'Anotar (Fiado)' ? '#ef4444' : '#1e1b4b', fontWeight: 'bold', background: formaPagamento === 'Anotar (Fiado)' ? '#fee2e2' : '#e0e7ff', padding: '4px 12px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {formaPagamento === 'Anotar (Fiado)' ? <><UserCheck size={16}/> Fiado {clienteSelecionado?.nome}</> : formaPagamento}
               </span>
             </div>
 
@@ -461,8 +514,8 @@ export default function Venda() {
                 <span style={{ fontSize: '15px', color: '#64748b', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}><Tag size={16} /> Desconto:</span>
                 <div style={{ display: 'flex', gap: '8px', width: isMobile ? '100%' : 'auto' }}>
                   <select value={descontoTipo} onChange={(e) => setDescontoTipo(e.target.value)} style={{ padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', cursor: 'pointer', background: 'white' }}>
-                    <option value="R$">-R$</option>
-                    <option value="%">-%</option>
+                    <option value="R$">- R$</option>
+                    <option value="%">- %</option>
                   </select>
                   <input 
                     type="number" min="0" placeholder="0.00" value={descontoValor} onChange={(e) => setDescontoValor(e.target.value)} 
@@ -511,7 +564,6 @@ export default function Venda() {
         </div>
       )}
 
-      {/* === BOTÃO FLUTUANTE PARA MOBILE === */}
       {isMobile && carrinho.length > 0 && (
         <button 
           onClick={rolarParaCarrinho}
