@@ -12,8 +12,9 @@ export default function NovoProduto() {
   const [codigoBarras, setCodigoBarras] = useState('')
   const [categoria, setCategoria] = useState('')
   const [preco, setPreco] = useState('')
+  const [precoAntigo, setPrecoAntigo] = useState('') // NOVO: Estado para o preço de desconto
   const [quantidade, setQuantidade] = useState('')
-  const [descricao, setDescricao] = useState('') // Novo estado para descrição
+  const [descricao, setDescricao] = useState('')
   
   const [imagensPreviews, setImagensPreviews] = useState([])
   const [categorias, setCategorias] = useState(['Perfumaria', 'Skincare', 'Maquiagem', 'Cabelos', 'Corpo e Banho'])
@@ -121,6 +122,7 @@ export default function NovoProduto() {
         codigoBarras,
         categoria: categoria || 'Sem Categoria',
         preco: parseFloat(preco),
+        precoAntigo: precoAntigo ? parseFloat(precoAntigo) : null, // NOVO: Salva o preço antigo
         quantidade: quantidade === '' ? 0 : parseInt(quantidade, 10),
         descricao: descricao.trim(),
         fotos: arrayImagensComprimidas,
@@ -135,6 +137,7 @@ export default function NovoProduto() {
       setCodigoBarras('')
       setCategoria('')
       setPreco('')
+      setPrecoAntigo('') // Limpa após salvar
       setQuantidade('')
       setDescricao('')
       setImagensPreviews([])
@@ -252,8 +255,13 @@ export default function NovoProduto() {
 
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '20px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
-              <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Preço (R$) *</label>
+              <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Preço de Venda (R$) *</label>
               <input type="number" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', boxSizing: 'border-box', width: '100%' }} />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
+              <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Preço Antigo (Opcional)</label>
+              <input type="number" step="0.01" value={precoAntigo} onChange={(e) => setPrecoAntigo(e.target.value)} placeholder="Ex: De 150 por..." style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', boxSizing: 'border-box', width: '100%' }} />
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>

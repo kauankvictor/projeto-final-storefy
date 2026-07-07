@@ -144,6 +144,8 @@ export default function Estoque() {
     return null
   }
 
+  const formatoMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor)
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
@@ -155,7 +157,12 @@ export default function Estoque() {
               <X size={16} />
             </button>
             
-            <div style={{ width: '100%', height: '300px', display: 'flex', overflowX: 'auto', scrollSnapType: 'x mandatory', background: '#f8fafc' }}>
+            <div style={{ width: '100%', height: '300px', display: 'flex', overflowX: 'auto', scrollSnapType: 'x mandatory', background: '#f8fafc', position: 'relative' }}>
+              {Number(produtoSelecionado.precoAntigo) > Number(produtoSelecionado.preco) && (
+                <div style={{ position: 'absolute', top: '12px', left: '12px', background: '#ef4444', color: 'white', fontSize: '12px', fontWeight: 'bold', padding: '6px 10px', borderRadius: '8px', zIndex: 5 }}>
+                  -{Math.round(((Number(produtoSelecionado.precoAntigo) - Number(produtoSelecionado.preco)) / Number(produtoSelecionado.precoAntigo)) * 100)}%
+                </div>
+              )}
               {(() => {
                 const fotosParaMostrar = (produtoSelecionado.fotos && produtoSelecionado.fotos.length > 0) ? produtoSelecionado.fotos : (produtoSelecionado.imagem ? [produtoSelecionado.imagem] : [])
                 if (fotosParaMostrar.length === 0) {
@@ -175,7 +182,14 @@ export default function Estoque() {
               </div>
               
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9', padding: '12px 0' }}>
-                <span style={{ fontSize: '24px', color: '#4f46e5', fontWeight: '900' }}>{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(produtoSelecionado.preco)}</span>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  {Number(produtoSelecionado.precoAntigo) > Number(produtoSelecionado.preco) && (
+                    <span style={{ fontSize: '14px', color: '#94a3b8', textDecoration: 'line-through', fontWeight: 'bold' }}>
+                      {formatoMoeda(produtoSelecionado.precoAntigo)}
+                    </span>
+                  )}
+                  <span style={{ fontSize: '24px', color: '#4f46e5', fontWeight: '900' }}>{formatoMoeda(produtoSelecionado.preco)}</span>
+                </div>
                 <span style={{ background: produtoSelecionado.quantidade > 0 ? '#d1fae5' : '#fee2e2', color: produtoSelecionado.quantidade > 0 ? '#059669' : '#dc2626', padding: '6px 12px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold' }}>
                   {produtoSelecionado.quantidade > 0 ? `Estoque: ${produtoSelecionado.quantidade}` : 'Esgotado'}
                 </span>
@@ -248,6 +262,7 @@ export default function Estoque() {
         <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '140px' : '240px'}, 1fr))`, gap: isMobile ? '12px' : '24px' }}>
           {produtosFiltrados.map((produto) => {
             const fotoPrincipal = pegarPrimeiraFoto(produto)
+            const temDesconto = Number(produto.precoAntigo) > Number(produto.preco)
 
             return (
               <div 
@@ -258,12 +273,17 @@ export default function Estoque() {
                 
                 <button 
                   onClick={(e) => { e.stopPropagation(); navigate(`/estoque/${produto.id}`) }}
-                  style={{ position: 'absolute', top: isMobile ? '16px' : '24px', right: isMobile ? '16px' : '24px', background: 'rgba(255,255,255,0.9)', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}
+                  style={{ position: 'absolute', top: isMobile ? '16px' : '24px', right: isMobile ? '16px' : '24px', background: 'rgba(255,255,255,0.9)', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', zIndex: 10 }}
                 >
                   <Edit2 size={16} color="#4f46e5" />
                 </button>
 
-                <div style={{ width: '100%', height: isMobile ? '120px' : '220px', borderRadius: '12px', overflow: 'hidden', background: '#f8fafc', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ width: '100%', height: isMobile ? '120px' : '220px', borderRadius: '12px', overflow: 'hidden', background: '#f8fafc', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                  {temDesconto && (
+                    <div style={{ position: 'absolute', top: '8px', left: '8px', background: '#ef4444', color: 'white', fontSize: '10px', fontWeight: 'bold', padding: '4px 6px', borderRadius: '6px', zIndex: 5 }}>
+                      -{Math.round(((Number(produto.precoAntigo) - Number(produto.preco)) / Number(produto.precoAntigo)) * 100)}%
+                    </div>
+                  )}
                   {fotoPrincipal ? (
                     <img src={fotoPrincipal} alt={produto.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   ) : (
@@ -280,17 +300,24 @@ export default function Estoque() {
                     {produto.nome}
                   </h3>
                   
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '4px' : '0' }}>
-                    <span style={{ fontSize: isMobile ? '15px' : '18px', color: '#4f46e5', fontWeight: '800' }}>
-                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(produto.preco)}
-                    </span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: 'auto', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '4px' : '0' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      {temDesconto && (
+                        <span style={{ fontSize: '12px', color: '#94a3b8', textDecoration: 'line-through', fontWeight: 'bold', marginBottom: '-2px' }}>
+                          {formatoMoeda(produto.precoAntigo)}
+                        </span>
+                      )}
+                      <span style={{ fontSize: isMobile ? '15px' : '18px', color: '#4f46e5', fontWeight: '800' }}>
+                        {formatoMoeda(produto.preco)}
+                      </span>
+                    </div>
                     
                     {produto.quantidade > 0 ? (
-                      <span style={{ background: '#d1fae5', color: '#059669', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold' }}>
+                      <span style={{ background: '#d1fae5', color: '#059669', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', alignSelf: isMobile ? 'flex-start' : 'center' }}>
                         Estoque: {produto.quantidade}
                       </span>
                     ) : (
-                      <span style={{ background: '#fee2e2', color: '#dc2626', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold' }}>
+                      <span style={{ background: '#fee2e2', color: '#dc2626', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', alignSelf: isMobile ? 'flex-start' : 'center' }}>
                         Esgotado
                       </span>
                     )}

@@ -14,6 +14,7 @@ export default function EditarProduto() {
   const [categoria, setCategoria] = useState('')
   const [descricao, setDescricao] = useState('')
   const [preco, setPreco] = useState('')
+  const [precoAntigo, setPrecoAntigo] = useState('') // NOVO: Estado para o preço antigo
   const [quantidade, setQuantidade] = useState('')
   const [imagensPreviews, setImagensPreviews] = useState([])
   
@@ -39,9 +40,9 @@ export default function EditarProduto() {
           setCategoria(dados.categoria || '')
           setDescricao(dados.descricao || '')
           setPreco(dados.preco ? dados.preco.toString() : '')
+          setPrecoAntigo(dados.precoAntigo ? dados.precoAntigo.toString() : '') // NOVO: Puxa o preço antigo do banco
           setQuantidade(dados.quantidade ? dados.quantidade.toString() : '0')
           
-          // Migração inteligente: se for um array novo usa ele, se for a string velha de foto única, transforma em array
           if (dados.fotos && Array.isArray(dados.fotos)) {
             setImagensPreviews(dados.fotos)
           } else if (dados.imagem) {
@@ -142,6 +143,7 @@ export default function EditarProduto() {
         categoria: categoria || 'Sem Categoria',
         descricao: descricao.trim(),
         preco: parseFloat(preco),
+        precoAntigo: precoAntigo ? parseFloat(precoAntigo) : null, // NOVO: Salva a atualização
         quantidade: parseInt(quantidade, 10) || 0,
         fotos: arrayImagensComprimidas,
         dataUltimaEdicao: new Date().toISOString()
@@ -267,8 +269,13 @@ export default function EditarProduto() {
 
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '20px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
-              <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Preço (R$) *</label>
+              <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Preço Atual (R$) *</label>
               <input type="number" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', boxSizing: 'border-box', width: '100%' }} />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
+              <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Preço Antigo (Opcional)</label>
+              <input type="number" step="0.01" value={precoAntigo} onChange={(e) => setPrecoAntigo(e.target.value)} placeholder="Ex: De 150 por..." style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', boxSizing: 'border-box', width: '100%' }} />
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>

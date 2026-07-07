@@ -279,7 +279,12 @@ export default function Venda() {
               <X size={16} />
             </button>
             
-            <div style={{ width: '100%', height: '300px', display: 'flex', overflowX: 'auto', scrollSnapType: 'x mandatory', background: '#f8fafc' }}>
+            <div style={{ width: '100%', height: '300px', display: 'flex', overflowX: 'auto', scrollSnapType: 'x mandatory', background: '#f8fafc', position: 'relative' }}>
+              {Number(produtoSelecionado.precoAntigo) > Number(produtoSelecionado.preco) && (
+                <div style={{ position: 'absolute', top: '12px', left: '12px', background: '#ef4444', color: 'white', fontSize: '12px', fontWeight: 'bold', padding: '6px 10px', borderRadius: '8px', zIndex: 5 }}>
+                  -{Math.round(((Number(produtoSelecionado.precoAntigo) - Number(produtoSelecionado.preco)) / Number(produtoSelecionado.precoAntigo)) * 100)}%
+                </div>
+              )}
               {(() => {
                 const fotosParaMostrar = (produtoSelecionado.fotos && produtoSelecionado.fotos.length > 0) ? produtoSelecionado.fotos : (produtoSelecionado.imagem ? [produtoSelecionado.imagem] : [])
                 if (fotosParaMostrar.length === 0) {
@@ -299,7 +304,14 @@ export default function Venda() {
               </div>
               
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9', padding: '12px 0' }}>
-                <span style={{ fontSize: '24px', color: '#4f46e5', fontWeight: '900' }}>{formatoMoeda(produtoSelecionado.preco)}</span>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  {Number(produtoSelecionado.precoAntigo) > Number(produtoSelecionado.preco) && (
+                    <span style={{ fontSize: '14px', color: '#94a3b8', textDecoration: 'line-through', fontWeight: 'bold' }}>
+                      {formatoMoeda(produtoSelecionado.precoAntigo)}
+                    </span>
+                  )}
+                  <span style={{ fontSize: '24px', color: '#4f46e5', fontWeight: '900' }}>{formatoMoeda(produtoSelecionado.preco)}</span>
+                </div>
                 <span style={{ background: produtoSelecionado.quantidade > 0 ? '#d1fae5' : '#fee2e2', color: produtoSelecionado.quantidade > 0 ? '#059669' : '#dc2626', padding: '6px 12px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold' }}>
                   {produtoSelecionado.quantidade > 0 ? `Estoque: ${produtoSelecionado.quantidade}` : 'Esgotado'}
                 </span>
@@ -347,6 +359,7 @@ export default function Venda() {
         <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '140px' : '200px'}, 1fr))`, gap: '16px' }}>
           {produtosFiltrados.map((produto) => {
             const fotoPrincipal = pegarPrimeiraFoto(produto)
+            const temDesconto = Number(produto.precoAntigo) > Number(produto.preco)
 
             return (
               <div 
@@ -354,14 +367,31 @@ export default function Venda() {
                 onClick={() => setProdutoSelecionado(produto)}
                 style={{ background: 'white', borderRadius: '16px', padding: isMobile ? '12px' : '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', cursor: 'pointer' }}
               >
-                <div style={{ width: '100%', height: isMobile ? '100px' : '140px', borderRadius: '8px', overflow: 'hidden', background: '#f8fafc', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ width: '100%', height: isMobile ? '100px' : '140px', borderRadius: '8px', overflow: 'hidden', background: '#f8fafc', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                  {temDesconto && (
+                    <div style={{ position: 'absolute', top: '8px', left: '8px', background: '#ef4444', color: 'white', fontSize: '10px', fontWeight: 'bold', padding: '4px 6px', borderRadius: '6px', zIndex: 5 }}>
+                      -{Math.round(((Number(produto.precoAntigo) - Number(produto.preco)) / Number(produto.precoAntigo)) * 100)}%
+                    </div>
+                  )}
                   {fotoPrincipal ? <img src={fotoPrincipal} alt={produto.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <ShoppingCart size={32} color="#cbd5e1" />}
                 </div>
                 <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase' }}>{produto.categoria}</span>
                 <h3 style={{ fontSize: isMobile ? '13px' : '14px', color: '#1e1b4b', fontWeight: 'bold', margin: '4px 0', lineHeight: '1.2' }}>{produto.nome}</h3>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', paddingTop: '8px' }}>
-                  <span style={{ fontSize: isMobile ? '14px' : '16px', color: '#4f46e5', fontWeight: '800' }}>{formatoMoeda(produto.preco)}</span>
-                  <span style={{ fontSize: '11px', color: produto.quantidade > 0 ? '#64748b' : '#ef4444', fontWeight: 'bold' }}>Qtd: {produto.quantidade}</span>
+                
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: 'auto', paddingTop: '8px', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '4px' : '0' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    {temDesconto && (
+                      <span style={{ fontSize: '11px', color: '#94a3b8', textDecoration: 'line-through', fontWeight: 'bold', marginBottom: '-2px' }}>
+                        {formatoMoeda(produto.precoAntigo)}
+                      </span>
+                    )}
+                    <span style={{ fontSize: isMobile ? '14px' : '16px', color: '#4f46e5', fontWeight: '800' }}>
+                      {formatoMoeda(produto.preco)}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '11px', color: produto.quantidade > 0 ? '#64748b' : '#ef4444', fontWeight: 'bold', alignSelf: isMobile ? 'flex-start' : 'center' }}>
+                    Qtd: {produto.quantidade}
+                  </span>
                 </div>
                 
                 <button 
