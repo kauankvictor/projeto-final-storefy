@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { TrendingUp, Package, AlertTriangle, Clock as ClockIcon, Users, Calendar, ShieldAlert, CheckCircle, ArrowRight, Link as LinkIcon, Plus, ExternalLink, Trash2, X, ClipboardList } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router-dom'
 
-// Importações cruciais do Firebase
+
 import { collection, getDocs } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
 
@@ -10,7 +10,7 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const location = useLocation() 
   
-  // ================= ESTADOS DO SISTEMA =================
+  
   const [agora, setAgora] = useState(new Date())
   const [linksRapidos, setLinksRapidos] = useState([])
   const [modalLink, setModalLink] = useState(false)
@@ -33,7 +33,7 @@ export default function Dashboard() {
 
   const [ultimasAtividades, setUltimasAtividades] = useState([])
 
-  // ================= ESTADO RESPONSIVO =================
+  
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
   useEffect(() => {
@@ -42,7 +42,7 @@ export default function Dashboard() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  // ================= RELÓGIO EM TEMPO REAL =================
+  
   useEffect(() => {
     const timer = setInterval(() => setAgora(new Date()), 1000)
     return () => clearInterval(timer)
@@ -51,7 +51,7 @@ export default function Dashboard() {
   const dataFormatada = agora.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
   const horaFormatada = agora.toLocaleTimeString('pt-BR')
 
-  // ================= FUNÇÃO DE VARREDURA DO BANCO DE DADOS NA NUVEM =================
+  
   const carregarDadosDoBanco = async () => {
     try {
       // Busca dados em tempo real diretamente do Cloud Firestore
@@ -64,7 +64,6 @@ export default function Dashboard() {
       const queryClientes = await getDocs(collection(db, "clientes"))
       const clientes = queryClientes.docs.map(doc => ({ id: doc.id, ...doc.data() }))
 
-      // Salva uma cópia local para compatibilidade dos módulos secundários
       localStorage.setItem('storefy_produtos', JSON.stringify(produtos))
 
       const links = JSON.parse(localStorage.getItem('storefy_links')) || []
@@ -179,7 +178,7 @@ export default function Dashboard() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', boxSizing: 'border-box', width: '100%' }}>
       
-      {/* CABEÇALHO RESPONSIVO */}
+      {}
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', flexWrap: 'wrap', gap: '16px', flexDirection: isMobile ? 'column' : 'row' }}>
         <div>
           <h1 style={{ fontSize: isMobile ? '24px' : '30px', color: '#1e1b4b', fontWeight: 'bold', margin: 0 }}>Painel de Controle</h1>
@@ -192,7 +191,7 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* CARDS DE MÉTRICAS RESPONSIVOS */}
+      {}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fit, minmax(200px, 1fr))', gap: isMobile ? '12px' : '20px' }}>
         
         <div style={{ background: 'white', padding: isMobile ? '16px' : '20px', borderRadius: '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.01)', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -386,7 +385,7 @@ export default function Dashboard() {
 
       </div>
 
-      {/* MODAL: CADASTRAR LINK RÁPIDO */}
+      {}
       {modalLink && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.6)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '20px', boxSizing: 'border-box' }}>
           <div style={{ background: 'white', width: '100%', maxWidth: '400px', borderRadius: '16px', padding: isMobile ? '24px' : '32px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)', boxSizing: 'border-box' }}>
