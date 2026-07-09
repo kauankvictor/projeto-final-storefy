@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { signInWithEmailAndPassword } from 'firebase/auth'
+import { signInWithEmailAndPassword, setPersistence, browserSessionPersistence } from 'firebase/auth'
 import { auth } from '../firebaseConfig'
 import { useNavigate } from 'react-router-dom'
 import { Lock, User, AlertCircle, ShoppingBag } from 'lucide-react'
@@ -17,8 +17,13 @@ export default function Login() {
     setErro('')
 
     try {
+      // Configura o Firebase para esquecer o login quando o navegador for fechado
+      await setPersistence(auth, browserSessionPersistence)
+      
+      // Realiza a autenticação
       await signInWithEmailAndPassword(auth, email, senha)
-      // Se a senha estiver correta, redireciona para o painel (dashboard ou frente de caixa)
+      
+      // Se a senha estiver correta, redireciona para o painel principal
       navigate('/') 
     } catch (error) {
       console.error(error)

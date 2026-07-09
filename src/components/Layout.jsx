@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Package, ShoppingCart, Users, History, Settings, TrendingUp, Menu, X } from 'lucide-react'
+import { LayoutDashboard, Package, ShoppingCart, Users, History, Settings, TrendingUp, Menu, X, LogOut } from 'lucide-react'
+
+// Importações do Firebase para o Logout
+import { signOut } from 'firebase/auth'
+import { auth } from '../firebaseConfig'
 
 export default function Layout({ children }) {
   const location = useLocation()
@@ -31,6 +35,16 @@ export default function Layout({ children }) {
   // Função para fechar o menu ao clicar em um link (apenas no celular)
   const fecharMenuMobile = () => {
     if (isMobile) setMenuAberto(false)
+  }
+
+  // Função de Logout
+  const fazerLogout = async () => {
+    try {
+      await signOut(auth)
+      // O App.jsx vai detectar a saída e redirecionar para a tela de login
+    } catch (error) {
+      console.error("Erro ao fazer logout:", error)
+    }
   }
 
   return (
@@ -130,6 +144,33 @@ export default function Layout({ children }) {
             </Link>
           ))}
         </nav>
+
+        {/* ================= BOTÃO DE LOGOUT ================= */}
+        <div style={{ marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid #334155' }}>
+          <button
+            onClick={fazerLogout}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              padding: '12px',
+              borderRadius: '8px',
+              fontSize: '16px',
+              width: '100%',
+              background: 'transparent',
+              color: '#f87171',
+              border: 'none',
+              cursor: 'pointer',
+              textAlign: 'left',
+              transition: 'background 0.2s',
+            }}
+            onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(248, 113, 113, 0.1)' }}
+            onMouseOut={(e) => { e.currentTarget.style.background = 'transparent' }}
+          >
+            <LogOut size={20} />
+            Sair do Sistema
+          </button>
+        </div>
       </aside>
 
       {/* ================= ÁREA DE CONTEÚDO PRINCIPAL ================= */}
