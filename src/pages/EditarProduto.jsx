@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Save, CheckCircle, AlertCircle, UploadCloud, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Save, CheckCircle, AlertCircle, UploadCloud, Trash2, X, LayoutGrid } from 'lucide-react'
 
 import { doc, getDoc, updateDoc, deleteDoc, collection, getDocs } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
@@ -16,6 +16,8 @@ export default function EditarProduto() {
   const [preco, setPreco] = useState('')
   const [precoAntigo, setPrecoAntigo] = useState('')
   const [quantidade, setQuantidade] = useState('')
+  
+  const [visivelCatalogo, setVisivelCatalogo] = useState(true)
   const [destaque, setDestaque] = useState(false)
   const [nomeDestaque, setNomeDestaque] = useState('')
   const [imagensPreviews, setImagensPreviews] = useState([])
@@ -28,6 +30,7 @@ export default function EditarProduto() {
   const [carregando, setCarregando] = useState(true)
   const [processando, setProcessando] = useState(false)
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+  const [modalCategoriasAberta, setModalCategoriasAberta] = useState(false)
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768)
@@ -37,7 +40,7 @@ export default function EditarProduto() {
       try {
         const querySnapshot = await getDocs(collection(db, "produtos"))
         const categoriasDoBanco = querySnapshot.docs.map(doc => doc.data().categoria).filter(Boolean)
-        setCategorias(['Perfumaria', 'Skincare', 'Maquiagem', 'Cabelos', 'Corpo e Banho', ...new Set(categoriasDoBanco)])
+        setCategorias([...new Set(categoriasDoBanco)].sort((a, b) => a.localeCompare(b)))
 
         const eventosDoBanco = querySnapshot.docs.map(doc => doc.data().nomeDestaque).filter(Boolean)
         setEventos([...new Set(eventosDoBanco)])
@@ -54,6 +57,8 @@ export default function EditarProduto() {
           setPreco(dados.preco ? dados.preco.toString() : '')
           setPrecoAntigo(dados.precoAntigo ? dados.precoAntigo.toString() : '')
           setQuantidade(dados.quantidade ? dados.quantidade.toString() : '0')
+          
+          setVisivelCatalogo(dados.visivelCatalogo !== false) 
           setDestaque(dados.destaque || false)
           setNomeDestaque(dados.nomeDestaque || '')
           
@@ -143,7 +148,7 @@ export default function EditarProduto() {
     }
 
     if (destaque && nomeDestaque.trim() === '') {
-      setErro('Digite um nome para a vitrine (Ex: Dia das Mães) ou desmarque a opção de destaque.')
+      setErro('Digite um nome para a vitrine ou desmarque a opção de destaque.')
       return
     }
 
@@ -159,6 +164,7 @@ export default function EditarProduto() {
         preco: parseFloat(preco),
         precoAntigo: precoAntigo ? parseFloat(precoAntigo) : null,
         quantidade: parseInt(quantidade, 10) || 0,
+        visivelCatalogo: visivelCatalogo,
         destaque: destaque,
         nomeDestaque: destaque ? nomeDestaque.trim() : null,
         fotos: arrayImagensComprimidas,
@@ -192,6 +198,53 @@ export default function EditarProduto() {
 
   return (
     <div style={{ maxWidth: '900px', display: 'flex', flexDirection: 'column', gap: '24px', paddingBottom: '40px', boxSizing: 'border-box', width: '100%' }}>
+      
+      {modalCategoriasAberta && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', zIndex: 5000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => setModalCategoriasAberta(false)}>
+          <div style={{ background: 'white', width: '100%', maxWidth: '600px', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '24px', display: 'flex', flexDirection: 'column', maxHeight: '70vh', boxShadow: '0 -10px 25px rgba(0,0,0,0.1)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '900', color: '#1f2937', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <LayoutGrid size={24} color="#4f46e5" /> Selecionar Categoria
+              </h2>
+              <button onClick={() => setModalCategoriasAberta(false)} style={{ background: '#f3f4f6', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><X size={20} /></button>
+            </div>
+            
+            <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingRight: '4px' }}>
+              {categorias.length === 0 ? (
+                <p style={{ textAlign: 'center', color: '#6b7280' }}>Nenhuma categoria cadastrada ainda.</p>
+              ) : (
+                categorias.map(cat => (
+                  <button
+                    key={`modal-${cat}`}
+                    onClick={() => {
+                      setCategoria(cat)
+                      setModalCategoriasAberta(false)
+                    }}
+                    style={{
+                      padding: '16px 20px',
+                      borderRadius: '16px',
+                      fontSize: '16px',
+                      fontWeight: 'bold',
+                      textAlign: 'left',
+                      background: '#f9fafb',
+                      color: '#1f2937',
+                      border: '2px solid transparent',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}
+                  >
+                    {cat}
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <button onClick={() => navigate('/estoque')} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center', padding: 0 }}><ArrowLeft size={24} /></button>
@@ -242,10 +295,12 @@ export default function EditarProduto() {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
               <label style={{ fontWeight: '600', color: '#475569' }}>Categoria</label>
-              <input type="text" list="lista-categorias-edit" value={categoria} onChange={(e) => setCategoria(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
-              <datalist id="lista-categorias-edit">
-                {categorias.map(cat => <option key={cat} value={cat} />)}
-              </datalist>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input type="text" value={categoria} onChange={(e) => setCategoria(e.target.value)} placeholder="Digite ou selecione..." style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
+                <button type="button" onClick={() => setModalCategoriasAberta(true)} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569' }}>
+                  <LayoutGrid size={20} />
+                </button>
+              </div>
             </div>
           </div>
 
@@ -270,6 +325,17 @@ export default function EditarProduto() {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '8px', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <input type="checkbox" id="visivelCatalogo" checked={visivelCatalogo} onChange={(e) => setVisivelCatalogo(e.target.checked)} style={{ width: '24px', height: '24px', cursor: 'pointer', accentColor: '#4f46e5' }} />
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <label htmlFor="visivelCatalogo" style={{ fontWeight: 'bold', color: '#1e1b4b', cursor: 'pointer', fontSize: '15px', margin: 0 }}>Exibir no Catálogo Online</label>
+                <span style={{ fontSize: '13px', color: '#64748b' }}>Desmarque para manter o produto apenas no sistema gerencial.</span>
+              </div>
+            </div>
+
+            <div style={{ width: '100%', height: '1px', background: '#e2e8f0', margin: '4px 0' }}></div>
+
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <input type="checkbox" id="destaque" checked={destaque} onChange={(e) => setDestaque(e.target.checked)} style={{ width: '24px', height: '24px', cursor: 'pointer', accentColor: '#4f46e5' }} />
               <div style={{ display: 'flex', flexDirection: 'column' }}>
