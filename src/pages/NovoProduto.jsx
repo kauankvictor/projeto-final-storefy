@@ -12,12 +12,15 @@ export default function NovoProduto() {
   const [codigoBarras, setCodigoBarras] = useState('')
   const [categoria, setCategoria] = useState('')
   const [preco, setPreco] = useState('')
-  const [precoAntigo, setPrecoAntigo] = useState('') // NOVO: Estado para o preço de desconto
+  const [precoAntigo, setPrecoAntigo] = useState('')
   const [quantidade, setQuantidade] = useState('')
   const [descricao, setDescricao] = useState('')
+  const [destaque, setDestaque] = useState(false)
+  const [nomeDestaque, setNomeDestaque] = useState('') 
   
   const [imagensPreviews, setImagensPreviews] = useState([])
   const [categorias, setCategorias] = useState(['Perfumaria', 'Skincare', 'Maquiagem', 'Cabelos', 'Corpo e Banho'])
+  const [eventos, setEventos] = useState([]) 
   const [erro, setErro] = useState('')
   const [sucesso, setSucesso] = useState(false)
   const [salvando, setSalvando] = useState(false)
@@ -27,34 +30,36 @@ export default function NovoProduto() {
     const handleResize = () => setIsMobile(window.innerWidth < 768)
     window.addEventListener('resize', handleResize)
     
-    const carregarCategoriasExistentes = async () => {
+    const carregarListasDinamicas = async () => {
       try {
         const querySnapshot = await getDocs(collection(db, "produtos"))
+        
         const categoriasDoBanco = querySnapshot.docs.map(doc => doc.data().categoria).filter(Boolean)
-        const listaUnica = ['Perfumaria', 'Skincare', 'Maquiagem', 'Cabelos', 'Corpo e Banho', ...new Set(categoriasDoBanco)]
-        setCategorias(listaUnica)
+        const listaUnicaCategorias = ['Perfumaria', 'Skincare', 'Maquiagem', 'Cabelos', 'Corpo e Banho', ...new Set(categoriasDoBanco)]
+        setCategorias(listaUnicaCategorias)
+
+        const eventosDoBanco = querySnapshot.docs.map(doc => doc.data().nomeDestaque).filter(Boolean)
+        const listaUnicaEventos = [...new Set(eventosDoBanco)]
+        setEventos(listaUnicaEventos)
+
       } catch (error) {
-        console.error("Erro ao carregar categorias dinâmicas:", error)
+        console.error("Erro ao carregar listas dinâmicas:", error)
       }
     }
 
-    carregarCategoriasExistentes()
+    carregarListasDinamicas()
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
   const handleImagemChange = (e) => {
     const files = Array.from(e.target.files)
-    
     if (imagensPreviews.length + files.length > 5) {
       setErro('Você pode adicionar no máximo 5 fotos por produto.')
       return
     }
-
     files.forEach(file => {
       const reader = new FileReader()
-      reader.onload = (event) => {
-        setImagensPreviews(prev => [...prev, event.target.result])
-      }
+      reader.onload = (event) => setImagensPreviews(prev => [...prev, event.target.result])
       reader.readAsDataURL(file)
     })
     setErro('')
@@ -112,6 +117,11 @@ export default function NovoProduto() {
       return
     }
 
+    if (destaque && nomeDestaque.trim() === '') {
+      setErro('Digite um nome para a vitrine (Ex: Dia das Mães) ou desmarque a opção de destaque.')
+      return
+    }
+
     setSalvando(true)
 
     try {
@@ -122,9 +132,11 @@ export default function NovoProduto() {
         codigoBarras,
         categoria: categoria || 'Sem Categoria',
         preco: parseFloat(preco),
-        precoAntigo: precoAntigo ? parseFloat(precoAntigo) : null, // NOVO: Salva o preço antigo
+        precoAntigo: precoAntigo ? parseFloat(precoAntigo) : null,
         quantidade: quantidade === '' ? 0 : parseInt(quantidade, 10),
         descricao: descricao.trim(),
+        destaque: destaque,
+        nomeDestaque: destaque ? nomeDestaque.trim() : null,
         fotos: arrayImagensComprimidas,
         dataCadastro: new Date().toISOString()
       }
@@ -137,14 +149,15 @@ export default function NovoProduto() {
       setCodigoBarras('')
       setCategoria('')
       setPreco('')
-      setPrecoAntigo('') // Limpa após salvar
+      setPrecoAntigo('')
       setQuantidade('')
       setDescricao('')
+      setDestaque(false)
+      setNomeDestaque('')
       setImagensPreviews([])
 
       setTimeout(() => setSucesso(false), 3000)
     } catch (error) {
-      console.error("Erro ao salvar no Firebase: ", error)
       setErro('Erro ao salvar o produto na nuvem. Verifique sua conexão.')
     } finally {
       setSalvando(false)
@@ -170,56 +183,28 @@ export default function NovoProduto() {
         </button>
         <div>
           <h1 style={{ fontSize: isMobile ? '24px' : '28px', color: '#1e1b4b', fontWeight: 'bold', margin: 0 }}>Novo Produto</h1>
-          <p style={{ color: '#64748b', marginTop: '4px', fontSize: isMobile ? '13px' : '15px', margin: 0 }}>Cadastre itens com até 5 fotos para o catálogo</p>
         </div>
       </header>
 
       {erro && <div style={{ background: '#fee2e2', color: '#ef4444', padding: '16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '500' }}><AlertCircle size={20} />{erro}</div>}
 
-      <form onSubmit={handleSalvar} style={{ 
-        background: 'white', 
-        padding: isMobile ? '20px' : '32px', 
-        borderRadius: '12px', 
-        boxShadow: '0 1px 3px rgba(0,0,0,0.05)', 
-        display: 'flex', 
-        flexDirection: isMobile ? 'column' : 'row', 
-        gap: '32px',
-        width: '100%',
-        boxSizing: 'border-box'
-      }}>
+      <form onSubmit={handleSalvar} style={{ background: 'white', padding: isMobile ? '20px' : '32px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '32px', width: '100%', boxSizing: 'border-box' }}>
         
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: isMobile ? '100%' : '300px', flexShrink: 0 }}>
           <label style={{ fontWeight: '600', color: '#475569', fontSize: '15px' }}>Fotos do Produto ({imagensPreviews.length}/5)</label>
-          
-          <div style={{ 
-            width: '100%',
-            height: '180px', 
-            borderRadius: '12px', 
-            border: '2px dashed #cbd5e1', 
-            display: 'flex', 
-            flexDirection: 'column', 
-            alignItems: 'center', 
-            justifyContent: 'center', 
-            background: '#f8fafc', 
-            position: 'relative', 
-            overflow: 'hidden',
-            cursor: 'pointer'
-          }}>
+          <div style={{ width: '100%', height: '180px', borderRadius: '12px', border: '2px dashed #cbd5e1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#f8fafc', position: 'relative', overflow: 'hidden', cursor: 'pointer' }}>
             <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px' }}>
               <UploadCloud size={40} style={{ margin: '0 auto 8px auto' }} />
               <p style={{ fontSize: '14px', margin: 0, fontWeight: '500' }}>Toque para adicionar fotos</p>
             </div>
             <input type="file" accept="image/*" multiple onChange={handleImagemChange} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }} />
           </div>
-
           {imagensPreviews.length > 0 && (
-            <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '10px', scrollbarWidth: 'thin' }}>
+            <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '10px' }}>
               {imagensPreviews.map((src, index) => (
                 <div key={index} style={{ position: 'relative', width: '80px', height: '80px', flexShrink: 0, borderRadius: '8px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
                   <img src={src} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  <button type="button" onClick={() => removerImagem(index)} style={{ position: 'absolute', top: '4px', right: '4px', background: 'rgba(0,0,0,0.6)', color: 'white', border: 'none', borderRadius: '50%', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}>
-                    <X size={14} />
-                  </button>
+                  <button type="button" onClick={() => removerImagem(index)} style={{ position: 'absolute', top: '4px', right: '4px', background: 'rgba(0,0,0,0.6)', color: 'white', border: 'none', borderRadius: '50%', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}><X size={14} /></button>
                 </div>
               ))}
             </div>
@@ -230,18 +215,17 @@ export default function NovoProduto() {
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Nome do Produto *</label>
-            <input type="text" value={nome} onChange={(e) => setNome(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', boxSizing: 'border-box', width: '100%' }} />
+            <input type="text" value={nome} onChange={(e) => setNome(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
           </div>
 
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '20px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
               <label style={{ fontWeight: '600', color: '#475569' }}>Código de Barras</label>
-              <input type="text" value={codigoBarras} onChange={(e) => setCodigoBarras(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', boxSizing: 'border-box', width: '100%' }} />
+              <input type="text" value={codigoBarras} onChange={(e) => setCodigoBarras(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
             </div>
-
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
               <label style={{ fontWeight: '600', color: '#475569' }}>Categoria</label>
-              <input type="text" list="lista-categorias" value={categoria} onChange={(e) => setCategoria(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', boxSizing: 'border-box', width: '100%' }} />
+              <input type="text" list="lista-categorias" value={categoria} onChange={(e) => setCategoria(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
               <datalist id="lista-categorias">
                 {categorias.map(cat => <option key={cat} value={cat} />)}
               </datalist>
@@ -250,24 +234,48 @@ export default function NovoProduto() {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Descrição do Produto</label>
-            <textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Escreva os detalhes, tamanho, marca..." style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', boxSizing: 'border-box', width: '100%', minHeight: '100px', resize: 'vertical' }} />
+            <textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', minHeight: '100px', resize: 'vertical', boxSizing: 'border-box' }} />
           </div>
 
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '20px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
-              <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Preço de Venda (R$) *</label>
-              <input type="number" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', boxSizing: 'border-box', width: '100%' }} />
+              <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Preço Venda (R$) *</label>
+              <input type="number" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
             </div>
-
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
-              <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Preço Antigo (Opcional)</label>
-              <input type="number" step="0.01" value={precoAntigo} onChange={(e) => setPrecoAntigo(e.target.value)} placeholder="Ex: De 150 por..." style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', boxSizing: 'border-box', width: '100%' }} />
+              <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Preço Antigo</label>
+              <input type="number" step="0.01" value={precoAntigo} onChange={(e) => setPrecoAntigo(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
             </div>
-
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
               <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Qtd. Estoque</label>
-              <input type="number" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', boxSizing: 'border-box', width: '100%' }} />
+              <input type="number" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
             </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '8px', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <input type="checkbox" id="destaque" checked={destaque} onChange={(e) => setDestaque(e.target.checked)} style={{ width: '24px', height: '24px', cursor: 'pointer', accentColor: '#db2777' }} />
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <label htmlFor="destaque" style={{ fontWeight: 'bold', color: '#1e1b4b', cursor: 'pointer', fontSize: '15px', margin: 0 }}>Destacar na Vitrine (Kits e Eventos)</label>
+              </div>
+            </div>
+            
+            {destaque && (
+              <div style={{ marginTop: '4px', paddingLeft: '36px' }}>
+                <label style={{ fontWeight: '600', color: '#475569', fontSize: '13px' }}>Nome da Seção (Ex: Dia dos Namorados)</label>
+                <input 
+                  type="text" 
+                  list="lista-eventos" 
+                  value={nomeDestaque} 
+                  onChange={(e) => setNomeDestaque(e.target.value)} 
+                  placeholder="Selecione ou digite um novo nome..."
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', marginTop: '4px', boxSizing: 'border-box' }} 
+                />
+                <datalist id="lista-eventos">
+                  {eventos.map(ev => <option key={ev} value={ev} />)}
+                </datalist>
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px', width: '100%' }}>
