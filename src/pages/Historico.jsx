@@ -24,7 +24,7 @@ export default function Historico() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  // 1. Busca os registros do histórico diretamente do Firebase
+  // Busca os registros do histórico diretamente do Firebase
   useEffect(() => {
     const buscarHistoricoNuvem = async () => {
       try {
@@ -148,12 +148,20 @@ export default function Historico() {
       if (reg.data !== dataFormatada) return false
     }
 
-    if (tipoFiltro === 'VENDAS' && reg.tipo !== 'VENDA' && reg.tipo !== 'FIADO') return false
-    if (tipoFiltro === 'SISTEMA' && reg.tipo === 'VENDA') return false
+    // Identificação das categorias para os filtros
+    const ehBaixa = reg.vendedor === 'Baixa de Fiado - Any' || reg.tipo === 'BAIXA' || reg.itens?.[0]?.id === 'baixa_conta'
+    const ehFiado = reg.tipo === 'FIADO'
+    const ehEstoque = reg.tipo === 'SISTEMA' || reg.tipo === 'ESTOQUE'
+    const ehVendaNormal = reg.tipo === 'VENDA' && !ehBaixa
+
+    if (tipoFiltro === 'VENDAS' && !ehVendaNormal) return false
+    if (tipoFiltro === 'FIADO' && !ehFiado) return false
+    if (tipoFiltro === 'ESTOQUE' && !ehEstoque) return false
+    if (tipoFiltro === 'BAIXAS' && !ehBaixa) return false
 
     if (busca.trim()) {
       const termo = busca.toLowerCase()
-      if (reg.tipo === 'VENDA' || reg.tipo === 'FIADO') {
+      if (ehVendaNormal || ehFiado || ehBaixa) {
         const nomeCliente = reg.cliente?.nome?.toLowerCase() || ''
         const nomeVendedor = reg.vendedor?.toLowerCase() || ''
         const itensVenda = (reg.itens || []).map(item => item?.nome?.toLowerCase() || '').join(' ')
@@ -206,10 +214,12 @@ export default function Historico() {
           />
         </div>
 
-        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', display: 'flex', overflow: 'hidden', width: isMobile ? '100%' : 'auto' }}>
-          <button onClick={() => setTipoFiltro('TODOS')} style={{ flex: 1, background: tipoFiltro === 'TODOS' ? '#4f46e5' : 'transparent', color: tipoFiltro === 'TODOS' ? 'white' : '#64748b', border: 'none', padding: '10px 12px', fontWeight: '600', cursor: 'pointer', fontSize: isMobile ? '13px' : '15px' }}>Todos</button>
-          <button onClick={() => setTipoFiltro('VENDAS')} style={{ flex: 1, background: tipoFiltro === 'VENDAS' ? '#10b981' : 'transparent', color: tipoFiltro === 'VENDAS' ? 'white' : '#64748b', border: 'none', padding: '10px 12px', fontWeight: '600', cursor: 'pointer', fontSize: isMobile ? '13px' : '15px' }}>Vendas</button>
-          <button onClick={() => setTipoFiltro('SISTEMA')} style={{ flex: 1, background: tipoFiltro === 'SISTEMA' ? '#3b82f6' : 'transparent', color: tipoFiltro === 'SISTEMA' ? 'white' : '#64748b', border: 'none', padding: '10px 12px', fontWeight: '600', cursor: 'pointer', fontSize: isMobile ? '13px' : '15px' }}>Auditoria</button>
+        {/* Novo Seletor de Filtros Avançados Horizontal */}
+        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', display: 'flex', overflowX: 'auto', width: isMobile ? '100%' : 'auto', scrollbarWidth: 'none' }}>
+          <button onClick={() => setTipoFiltro('TODOS')} style={{ flex: 1, background: tipoFiltro === 'TODOS' ? '#4f46e5' : 'transparent', color: tipoFiltro === 'TODOS' ? 'white' : '#64748b', border: 'none', padding: '10px 14px', fontWeight: '600', cursor: 'pointer', fontSize: '14px', whiteSpace: 'nowrap' }}>Todos</button>
+          <button onClick={() => setTipoFiltro('VENDAS')} style={{ flex: 1, background: tipoFiltro === 'VENDAS' ? '#10b981' : 'transparent', color: tipoFiltro === 'VENDAS' ? 'white' : '#64748b', border: 'none', padding: '10px 14px', fontWeight: '600', cursor: 'pointer', fontSize: '14px', whiteSpace: 'nowrap' }}>Vendas</button>
+          <button onClick={() => setTipoFiltro('FIADO')} style={{ flex: 1, background: tipoFiltro === 'FIADO' ? '#ef4444' : 'transparent', color: tipoFiltro === 'FIADO' ? 'white' : '#64748b', border: 'none', padding: '10px 14px', fontWeight: '600', cursor: 'pointer', fontSize: '14px', whiteSpace: 'nowrap' }}>Fiado</button>
+          <button onClick={() => setTipoFiltro('BAIXAS')} style={{ flex: 1, background: tipoFiltro === 'BAIXAS' ? '#a855f7' : 'transparent', color: tipoFiltro === 'BAIXAS' ? 'white' : '#64748b', border: 'none', padding: '10px 14px', fontWeight: '600', cursor: 'pointer', fontSize: '14px', whiteSpace: 'nowrap' }}>Baixas</button>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', background: '#f8fafc', padding: '8px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', gap: '8px', width: isMobile ? '100%' : 'auto', boxSizing: 'border-box' }}>
@@ -229,9 +239,35 @@ export default function Historico() {
           </div>
         ) : (
           registrosFiltrados.map((reg, index) => {
-            const isVenda = reg?.tipo === 'VENDA' || reg?.tipo === 'FIADO'
-            const corDestaque = isVenda ? '#10b981' : '#3b82f6'
-            const bgCorDestaque = isVenda ? '#d1fae5' : '#dbeafe'
+            const ehBaixa = reg.vendedor === 'Baixa de Fiado - Any' || reg.tipo === 'BAIXA' || reg.itens?.[0]?.id === 'baixa_conta'
+            const ehFiado = reg.tipo === 'FIADO'
+            const ehEstoque = reg.tipo === 'SISTEMA' || reg.tipo === 'ESTOQUE'
+            const ehVendaNormal = reg.tipo === 'VENDA' && !ehBaixa
+
+            // Configuração dinâmica de cores e rótulos baseada nas categorias solicitadas
+            let labelTipo = 'Alteração de Estoque'
+            let corDestaque = '#3b82f6'
+            let bgCorDestaque = '#dbeafe'
+            let iconeCategoria = <Package size={20} />
+
+            if (ehBaixa) {
+              labelTipo = 'Baixa de Conta de Cliente'
+              corDestaque = '#a855f7'
+              bgCorDestaque = '#f3e8ff'
+              iconeCategoria = <CreditCard size={20} />
+            } else if (ehFiado) {
+              labelTipo = 'Venda Fiado (Pendente)'
+              corDestaque = '#ef4444'
+              bgCorDestaque = '#fee2e2'
+              iconeCategoria = <History size={20} />
+            } else if (ehVendaNormal) {
+              labelTipo = 'Venda Concluída'
+              corDestaque = '#10b981'
+              bgCorDestaque = '#d1fae5'
+              iconeCategoria = <ShoppingBag size={20} />
+            }
+
+            const mostrarComoEstruturaVenda = ehVendaNormal || ehFiado || ehBaixa
 
             return (
               <div key={reg?.idFirestore || index} style={{ background: 'white', borderRadius: '16px', border: '1px solid #f1f5f9', borderLeft: `5px solid ${corDestaque}`, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -239,11 +275,11 @@ export default function Historico() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', flexDirection: isMobile ? 'column' : 'row', padding: isMobile ? '16px' : '16px 24px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9', gap: isMobile ? '16px' : '0' }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
                     <div style={{ background: bgCorDestaque, color: corDestaque, padding: '8px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '2px' }}>
-                      {isVenda ? <ShoppingBag size={20} /> : <Edit size={20} />}
+                      {iconeCategoria}
                     </div>
                     <div>
                       <span style={{ fontSize: '15px', fontWeight: 'bold', color: '#1e1b4b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        {isVenda ? (reg.tipo === 'FIADO' ? 'Venda Fiado (Pendente)' : 'Venda Concluída') : 'Atualização de Sistema'}
+                        {labelTipo}
                       </span>
                       <div style={{ display: 'flex', gap: '12px', color: '#64748b', fontSize: '12px', marginTop: '4px' }}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Calendar size={12} /> {reg?.data || 'Sem data'}</span>
@@ -252,7 +288,7 @@ export default function Historico() {
                     </div>
                   </div>
                   
-                  {isVenda && (
+                  {mostrarComoEstruturaVenda && (
                     <div style={{ textAlign: isMobile ? 'left' : 'right', display: 'flex', flexDirection: 'column', gap: '2px', borderTop: isMobile ? '1px dashed #cbd5e1' : 'none', paddingTop: isMobile ? '12px' : '0' }}>
                       {reg.desconto > 0 && (
                         <span style={{ fontSize: '12px', color: '#94a3b8', textDecoration: 'line-through' }}>
@@ -260,9 +296,9 @@ export default function Historico() {
                         </span>
                       )}
                       <span style={{ fontSize: '11px', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>
-                        {reg.desconto > 0 ? `Total com Desconto (-${formatoMoeda(reg.desconto)})` : 'Total da Venda'}
+                        {reg.desconto > 0 ? `Total com Desconto` : 'Total Movimentado'}
                       </span>
-                      <h3 style={{ fontSize: '20px', color: '#10b981', fontWeight: '900', margin: 0 }}>
+                      <h3 style={{ fontSize: '20px', color: corDestaque, fontWeight: '900', margin: 0 }}>
                         {formatoMoeda(reg?.total || 0)}
                       </h3>
                     </div>
@@ -270,11 +306,11 @@ export default function Historico() {
                 </div>
 
                 <div style={{ padding: isMobile ? '16px' : '20px 24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  {isVenda ? (
+                  {mostrarComoEstruturaVenda ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                       <div>
                         <p style={{ fontSize: '13px', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <Package size={14} /> Itens Movimentados
+                          <Package size={14} /> Detalhes do Registro
                         </p>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '12px', borderRadius: '12px', border: '1px dashed #cbd5e1' }}>
                           {reg?.itens && reg.itens.length > 0 ? (
@@ -299,7 +335,7 @@ export default function Historico() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f1f5f9', padding: '10px 12px', borderRadius: '8px', flex: 1 }}>
                           <CreditCard size={16} color="#64748b" />
                           <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Pagamento</span>
+                            <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Movimentação</span>
                             <span style={{ fontSize: '13px', color: '#1e1b4b', fontWeight: '600' }}>{reg?.formaPagamento || 'Não informada'}</span>
                           </div>
                         </div>
@@ -307,7 +343,7 @@ export default function Historico() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f1f5f9', padding: '10px 12px', borderRadius: '8px', flex: 1 }}>
                           <User size={16} color="#64748b" />
                           <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Vendedor(a)</span>
+                            <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Operador</span>
                             <span style={{ fontSize: '13px', color: '#1e1b4b', fontWeight: '600' }}>{reg?.vendedor || 'Não informado'}</span>
                           </div>
                         </div>
@@ -323,12 +359,15 @@ export default function Historico() {
                         )}
                       </div>
 
-                      <button 
-                        onClick={() => tentarCancelarVenda(reg.idFirestore)}
-                        style={{ alignSelf: isMobile ? 'stretch' : 'flex-end', background: 'transparent', color: '#ef4444', border: '1px solid #fee2e2', padding: '10px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '4px', transition: '0.2s' }}
-                      >
-                        <X size={16} /> Cancelar Transação na Nuvem
-                      </button>
+                      {/* Trava de segurança para impedir estorno incorreto em baixas de contas de clientes */}
+                      {(ehVendaNormal || ehFiado) && (
+                        <button 
+                          onClick={() => tentarCancelarVenda(reg.idFirestore)}
+                          style={{ alignSelf: isMobile ? 'stretch' : 'flex-end', background: 'transparent', color: '#ef4444', border: '1px solid #fee2e2', padding: '10px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '4px', transition: '0.2s' }}
+                        >
+                          <X size={16} /> Cancelar Transação na Nuvem
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
@@ -351,9 +390,8 @@ export default function Historico() {
       </div>
 
       {authModal.isOpen && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(15, 23, 42, 0.8)', backdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999, padding: '20px', boxSizing: 'border-box' }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(15, 23, 42, 0.8)', backdropFilter: 'blur(4px)', zIndex: 9999, padding: '20px', boxSizing: 'border-box' }}>
           <div style={{ background: '#ffffff', width: '100%', maxWidth: '400px', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)', boxSizing: 'border-box' }}>
-            
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ margin: 0, color: '#ef4444', fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Lock size={20} /> {authModal.titulo}
@@ -398,7 +436,6 @@ export default function Historico() {
                 </button>
               </div>
             </form>
-
           </div>
         </div>
       )}
