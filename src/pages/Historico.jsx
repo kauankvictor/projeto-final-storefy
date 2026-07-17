@@ -1,11 +1,9 @@
 import { useState, useEffect } from 'react'
-import { History, ShoppingBag, Edit, Calendar, Clock, User, CreditCard, Trash2, Filter, Search, Package, ArrowRight, X, Lock, FileText, Settings } from 'lucide-react'
+import { History, ShoppingBag, Edit, Calendar, Clock, User, CreditCard, Filter, Search, Package, ArrowRight, X, Lock, FileText, Settings } from 'lucide-react'
 
-// Importações cruciais do Firebase
 import { collection, getDocs, doc, deleteDoc, getDoc, setDoc, updateDoc, query, orderBy } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
 
-// Importação do Componente de Recibo
 import ReciboModal from './ReciboModal'
 
 export default function Historico() {
@@ -17,11 +15,8 @@ export default function Historico() {
 
   const [authModal, setAuthModal] = useState({ isOpen: false, targetId: null, titulo: '' })
   const [senhaDigitada, setSenhaDigitada] = useState('')
-  
-  // Guardará as senhas vindas da nuvem
   const [seguranca, setSeguranca] = useState({})
 
-  // Estados para o Módulo de Recibos
   const [reciboAberto, setReciboAberto] = useState(null)
   const [configReciboAberto, setConfigReciboAberto] = useState(false)
   const [dadosLoja, setDadosLoja] = useState({ nomeLoja: '', endereco: '', telefone: '' })
@@ -34,7 +29,6 @@ export default function Historico() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  // Busca os dados da loja e as senhas de segurança na nuvem
   useEffect(() => {
     const carregarConfiguracoesNuvem = async () => {
       try {
@@ -102,7 +96,6 @@ export default function Historico() {
   const confirmarAcesso = async (e) => {
     e.preventDefault()
     
-    // Puxa a senha de estorno configurada, se não existir, usa a senha master, ou a de fábrica como último recurso
     const senhaEstornoCorreta = seguranca.senhaEstorno || seguranca.senhaMaster || '!P$.juno.K'
     const senhaMasterCorreta = seguranca.senhaMaster || '!P$.juno.K'
     
@@ -120,7 +113,7 @@ export default function Historico() {
     const vendaParaCancelar = registros.find(h => h.idFirestore === idFirestore)
     if (!vendaParaCancelar) return
 
-    if (window.confirm('Confirmar o cancelamento na nuvem? Os produtos retornarão ao estoque e, se houver débito, ele será removido da ficha do cliente.')) {
+    if (window.confirm('Confirmar o cancelamento da venda na nuvem? Os produtos retornarão ao estoque e, se houver débito, ele será removido da ficha do cliente.')) {
       
       try {
         if (vendaParaCancelar.itens && vendaParaCancelar.itens.length > 0) {
@@ -262,7 +255,7 @@ export default function Historico() {
           </div>
         ) : (
           registrosFiltrados.map((reg, index) => {
-            const ehBaixa = reg.vendedor === 'Baixa de Fiado - Any' || reg.tipo === 'BAIXA' || reg.itens?.[0]?.id === 'baixa_conta'
+            const ehBaixa = reg.vendedor === 'Baixa de Fiado' || reg.tipo === 'BAIXA' || reg.itens?.[0]?.id === 'baixa_conta'
             const ehFiado = reg.tipo === 'FIADO'
             const ehEstoque = reg.tipo === 'SISTEMA' || reg.tipo === 'ESTOQUE'
             const ehVendaNormal = reg.tipo === 'VENDA' && !ehBaixa
@@ -419,7 +412,6 @@ export default function Historico() {
         )}
       </div>
 
-      {/* Modal para fixar os dados que aparecem no topo do Recibo */}
       {configReciboAberto && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(15, 23, 42, 0.8)', backdropFilter: 'blur(4px)', zIndex: 9999, padding: '20px', boxSizing: 'border-box', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
           <div style={{ background: '#ffffff', width: '100%', maxWidth: '400px', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)', boxSizing: 'border-box' }}>
@@ -471,7 +463,6 @@ export default function Historico() {
         </div>
       )}
 
-      {/* Modal de Cancelamento Exigindo Apenas Senha */}
       {authModal.isOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(15, 23, 42, 0.8)', backdropFilter: 'blur(4px)', zIndex: 9999, padding: '20px', boxSizing: 'border-box', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
           <div style={{ background: '#ffffff', width: '100%', maxWidth: '400px', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)', boxSizing: 'border-box' }}>

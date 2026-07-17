@@ -148,6 +148,16 @@ export default function NovoProduto() {
 
       await addDoc(collection(db, "produtos"), produtoNovo)
 
+      const logEstoqueNovo = {
+        idRegistro: Date.now(),
+        tipo: 'ESTOQUE',
+        data: new Date().toLocaleDateString('pt-BR'),
+        hora: new Date().toLocaleTimeString('pt-BR'),
+        produtoAlterado: nome,
+        detalhes: `Entrada inicial de produto no sistema. Quantidade inserida: ${quantidade || 0} unidades.`
+      }
+      await addDoc(collection(db, "historico"), logEstoqueNovo)
+
       setErro('')
       setSucesso(true)
       setNome('')

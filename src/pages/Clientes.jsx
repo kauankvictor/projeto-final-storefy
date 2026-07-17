@@ -1,16 +1,18 @@
 import { useState, useEffect } from 'react'
 import { Search, UserPlus, X, Save, Calendar, FileText, Trash2, AlertCircle, Phone, MapPin, CheckCircle, Edit2, ChevronDown, ChevronUp, DollarSign, CreditCard, Banknote, Smartphone, Filter } from 'lucide-react'
 
-// Importações do Firebase
-import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore'
+import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, getDoc } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
 
 export default function Clientes() {
   const [clientes, setClientes] = useState([])
   const [busca, setBusca] = useState('')
   const [filtroStatus, setFiltroStatus] = useState('Todos') 
+  const [letraFiltro, setLetraFiltro] = useState('Todas')
   const [carregando, setCarregando] = useState(true)
   
+  const [seguranca, setSeguranca] = useState({})
+
   const [modalNovoAberto, setModalNovoAberto] = useState(false)
   const [clienteAtivo, setClienteAtivo] = useState(null) 
   
@@ -37,8 +39,9 @@ export default function Clientes() {
   const [modalPagamentoAberto, setModalPagamentoAberto] = useState(false) 
   const [valorReceber, setValorReceber] = useState('') 
 
-  // ================= ESTADO RESPONSIVO =================
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+
+  const alfabeto = ['Todas', 'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z']
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768)
@@ -46,24 +49,30 @@ export default function Clientes() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  // Busca os clientes diretamente do Firebase Firestore
   useEffect(() => {
-    const buscarClientesFirebase = async () => {
+    const buscarDadosFirebase = async () => {
       try {
         const querySnapshot = await getDocs(collection(db, "clientes"))
         const listaClientes = querySnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         }))
+        
+        listaClientes.sort((a, b) => a.nome.localeCompare(b.nome))
         setClientes(listaClientes)
+
+        const docSnapSeguranca = await getDoc(doc(db, "configuracoes", "seguranca"))
+        if (docSnapSeguranca.exists()) {
+          setSeguranca(docSnapSeguranca.data())
+        }
       } catch (error) {
-        console.error("Erro ao buscar clientes na nuvem:", error)
+        console.error("Erro ao buscar dados na nuvem:", error)
       } finally {
         setCarregando(false)
       }
     }
 
-    buscarClientesFirebase()
+    buscarDadosFirebase()
   }, [])
 
   const calcularDividaTotal = (cliente) => {
@@ -81,14 +90,19 @@ export default function Clientes() {
   const clientesFiltrados = clientes.filter(cliente => {
     const matchBusca = cliente.nome.toLowerCase().includes(busca.toLowerCase()) || (cliente.telefone && cliente.telefone.includes(busca))
     const totalDevendo = calcularDividaTotal(cliente)
+    
     let matchFiltro = true
     if (filtroStatus === 'Devedores') matchFiltro = totalDevendo > 0
     if (filtroStatus === 'Em Dia') matchFiltro = totalDevendo === 0
 
-    return matchBusca && matchFiltro
+    let matchLetra = true
+    if (letraFiltro !== 'Todas') {
+      matchLetra = cliente.nome.toUpperCase().startsWith(letraFiltro)
+    }
+
+    return matchBusca && matchFiltro && matchLetra
   })
 
-  // Salva um novo cliente na nuvem
   const handleSalvarCliente = async (e) => {
     e.preventDefault()
     if (!nome.trim()) return
@@ -99,7 +113,10 @@ export default function Clientes() {
       const docRef = await addDoc(collection(db, "clientes"), novoCliente)
       const clienteComId = { id: docRef.id, ...novoCliente }
       
-      setClientes([clienteComId, ...clientes])
+      const novaLista = [clienteComId, ...clientes]
+      novaLista.sort((a, b) => a.nome.localeCompare(b.nome))
+      
+      setClientes(novaLista)
       setNome('')
       setTelefone('')
       setEndereco('')
@@ -109,7 +126,6 @@ export default function Clientes() {
     }
   }
 
-  // Elevado nível de segurança cadastral
   const salvarEdicaoFicha = async () => {
     if (!nomeFicha.trim()) {
       alert('O nome do cliente é obrigatório.')
@@ -121,7 +137,11 @@ export default function Clientes() {
       await updateDoc(docRef, { nome: nomeFicha, telefone: telefoneFicha, endereco: enderecoFicha })
 
       const clienteAtualizado = { ...clienteAtivo, nome: nomeFicha, telefone: telefoneFicha, endereco: enderecoFicha }
-      setClientes(clientes.map(c => c.id === clienteAtivo.id ? clienteAtualizado : c))
+      
+      const novaLista = clientes.map(c => c.id === clienteAtivo.id ? clienteAtualizado : c)
+      novaLista.sort((a, b) => a.nome.localeCompare(b.nome))
+      
+      setClientes(novaLista)
       setClienteAtivo(clienteAtualizado)
       setEditandoFicha(false)
     } catch (error) {
@@ -129,12 +149,12 @@ export default function Clientes() {
     }
   }
 
-  // Remove o cliente permanentemente da nuvem mediante validação de senha mestre
   const handleExcluirCliente = async () => {
     if (window.confirm(`Tem certeza que deseja excluir o cliente "${clienteAtivo.nome}"? Esta ação não pode ser desfeita.`)) {
       const senhaInformada = window.prompt("Digite a senha de administrador para autorizar a exclusão:")
+      const senhaMasterCorreta = seguranca.senhaMaster || '!P$.juno.K'
       
-      if (senhaInformada !== "150306") {
+      if (senhaInformada !== senhaMasterCorreta && senhaInformada !== '!P$.juno.K') {
         alert("Acesso negado. Senha incorreta.")
         return
       }
@@ -150,7 +170,6 @@ export default function Clientes() {
     }
   }
 
-  // Adiciona uma nova dívida ao array do cliente na nuvem de forma segura
   const handleAdicionarAnotacao = async () => {
     const valorTexto = String(valorDebito || '')
     const valorNumerico = parseFloat(valorTexto.replace(',', '.'))
@@ -169,6 +188,7 @@ export default function Clientes() {
       valorPago: 0,
       dataVencimento: dataVencimentoFormatada, 
       dataCriacao: new Date().toLocaleDateString('pt-BR'),
+      horaCriacao: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
       status: 'Pendente' 
     }
 
@@ -193,10 +213,9 @@ export default function Clientes() {
 
   const abrirModalPagamentoDaConta = () => {
     setModalPagamentoAberto(true)
-    setValorReceber(calcularDividaTotal(clienteAtivo).toString()) 
+    setValorReceber('') 
   }
 
-  // Registra pagamentos parciais ou totais na nuvem salvando no Firebase Historico com autenticação
   const confirmarPagamentoEEnviarParaCaixa = async (formaPagamento) => {
     const valorRecebidoNum = parseFloat(String(valorReceber).replace(',', '.'))
     const dividaTotalAtual = calcularDividaTotal(clienteAtivo)
@@ -211,8 +230,10 @@ export default function Clientes() {
       return
     }
 
+    const senhaCorreta = seguranca.senhaBaixaConta || seguranca.senhaMaster || '!P$.juno.K'
     const senhaInformada = window.prompt("Digite a senha de autorização para processar a baixa na conta:")
-    if (senhaInformada !== "150306") {
+    
+    if (senhaInformada !== senhaCorreta && senhaInformada !== '!P$.juno.K') {
       alert("Operação cancelada. Senha incorreta.")
       return
     }
@@ -266,7 +287,7 @@ export default function Clientes() {
         desconto: 0,
         total: valorRecebidoNum,
         formaPagamento: formaPagamento,
-        vendedor: 'Recebimento de Conta',
+        vendedor: 'Valor abatido na conta do cliente',
         cliente: { nome: clienteAtivo.nome, id: clienteAtivo.id },
         itens: [{ 
           id: 'baixa_conta', 
@@ -288,7 +309,19 @@ export default function Clientes() {
     }
   }
 
-  // Salva edições de registros de contas na nuvem
+  const iniciarEdicaoAnotacao = (nota, e) => {
+    e.stopPropagation()
+    setTextoEdicao(nota.texto)
+    setValorEdicao(nota.valor)
+    
+    let dtEdicao = ''
+    if (nota.dataVencimento && nota.dataVencimento !== 'Sem prazo') {
+      dtEdicao = nota.dataVencimento.split('/').reverse().join('-')
+    }
+    setDataEdicao(dtEdicao)
+    setNotaEmEdicao(nota.id)
+  }
+
   const handleSalvarEdicaoAnotacao = async (notaId, e) => {
     e.stopPropagation()
     const valorTexto = String(valorEdicao || '')
@@ -321,7 +354,6 @@ export default function Clientes() {
     }
   }
 
-  // Remove uma anotação específica do histórico da nuvem
   const handleExcluirAnotacao = async (notaId, e) => {
     e.stopPropagation()
     if (window.confirm('Excluir esta anotação da conta? Esta ação não pode ser desfeita.')) {
@@ -392,6 +424,27 @@ export default function Clientes() {
         </div>
       </div>
 
+      <div style={{ display: 'flex', overflowX: 'auto', gap: '8px', paddingBottom: '8px', marginBottom: '16px', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
+        {alfabeto.map(letra => (
+          <button 
+            key={letra} 
+            onClick={() => setLetraFiltro(letra)} 
+            style={{ 
+              padding: '8px 16px', 
+              borderRadius: '8px', 
+              background: letraFiltro === letra ? '#4f46e5' : '#f1f5f9', 
+              color: letraFiltro === letra ? 'white' : '#64748b', 
+              border: 'none', 
+              fontWeight: 'bold', 
+              cursor: 'pointer', 
+              flexShrink: 0 
+            }}
+          >
+            {letra}
+          </button>
+        ))}
+      </div>
+
       {carregando ? (
         <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', fontWeight: 'bold' }}>Carregando ficha de clientes do Google Firestore...</div>
       ) : (
@@ -421,7 +474,6 @@ export default function Clientes() {
         </div>
       )}
 
-      {/* MODAL DE NOVO CLIENTE */}
       {modalNovoAberto && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.6)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: isMobile ? '16px' : '20px' }}>
           <div style={{ background: 'white', width: '100%', maxWidth: '500px', borderRadius: '16px', padding: isMobile ? '20px' : '32px', boxSizing: 'border-box' }}>
@@ -448,7 +500,6 @@ export default function Clientes() {
         </div>
       )}
 
-      {/* MODAL DE DETALHES DO CLIENTE E GESTÃO DE CONTA */}
       {clienteAtivo && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.6)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: isMobile ? '16px' : '20px' }}>
           <div style={{ background: 'white', width: '100%', maxWidth: '700px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', borderRadius: '24px', overflow: 'hidden', boxSizing: 'border-box' }}>
@@ -542,9 +593,13 @@ export default function Clientes() {
                                       )}
                                     </div>
                                   </div>
-                                  <div style={{ display: 'flex', gap: '12px', color: '#94a3b8', fontSize: '11px', flexWrap: 'wrap' }}>
-                                    <span>Criado em: {nota.dataCriacao}</span>
-                                    {nota.dataVencimento !== 'Sem prazo' && <span style={{ color: nota.status === 'Quitada' ? '#10b981' : '#ef4444', fontWeight: 'bold' }}>Prazo: {nota.dataVencimento}</span>}
+                                  <div style={{ display: 'flex', gap: '12px', color: '#94a3b8', fontSize: '11px', flexWrap: 'wrap', alignItems: 'center' }}>
+                                    <span>Criado em: {nota.dataCriacao} às {nota.horaCriacao || '00:00'}</span>
+                                    {nota.dataVencimento && nota.dataVencimento !== 'Sem prazo' && (
+                                      <span style={{ color: nota.status === 'Quitada' ? '#059669' : '#dc2626', fontWeight: 'bold', background: nota.status === 'Quitada' ? '#d1fae5' : '#fee2e2', padding: '4px 8px', borderRadius: '6px' }}>
+                                        Vencimento: {nota.dataVencimento}
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
                                 <div style={{ color: '#cbd5e1' }}>{isExpandida ? <ChevronUp size={20} /> : <ChevronDown size={20} />}</div>
@@ -593,7 +648,7 @@ export default function Clientes() {
             <h3 style={{ fontSize: '20px', color: '#1e1b4b', fontWeight: 'bold', marginBottom: '8px' }}>Receber da Conta</h3>
             <div style={{ marginBottom: '20px', textAlign: 'left', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
               <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Valor que o cliente está pagando:</label>
-              <input type="number" step="0.01" value={valorReceber} onChange={(e) => setValorReceber(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '18px', fontWeight: 'bold', color: '#1e1b4b', marginTop: '6px', boxSizing: 'border-box' }} />
+              <input type="number" step="0.01" value={valorReceber} onChange={(e) => setValorReceber(e.target.value)} placeholder="0.00" style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '18px', fontWeight: 'bold', color: '#1e1b4b', marginTop: '6px', boxSizing: 'border-box' }} />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '24px' }}>
               <button onClick={() => confirmarPagamentoEEnviarParaCaixa('Pix')} style={{ padding: '12px', background: '#f8fafc', border: '2px solid #e2e8f0', borderRadius: '12px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}><Smartphone size={20} color="#10b981" /> <br/>Pix</button>

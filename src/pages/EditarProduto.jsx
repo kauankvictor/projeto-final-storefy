@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Save, CheckCircle, AlertCircle, UploadCloud, Trash2, X, LayoutGrid } from 'lucide-react'
 
-import { doc, getDoc, updateDoc, deleteDoc, collection, getDocs } from 'firebase/firestore'
+import { doc, getDoc, updateDoc, deleteDoc, collection, getDocs, addDoc } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
 
 export default function EditarProduto() {
@@ -25,12 +25,17 @@ export default function EditarProduto() {
   const [categorias, setCategorias] = useState([])
   const [eventos, setEventos] = useState([])
   
+  // NOVO ESTADO: Guarda os dados originais para comparar o que mudou
+  const [produtoOriginal, setProdutoOriginal] = useState(null)
+
   const [erro, setErro] = useState('')
   const [sucesso, setSucesso] = useState(false)
   const [carregando, setCarregando] = useState(true)
   const [processando, setProcessando] = useState(false)
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
   const [modalCategoriasAberta, setModalCategoriasAberta] = useState(false)
+
+  const formatoMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(valor) || 0)
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768)
@@ -50,6 +55,10 @@ export default function EditarProduto() {
 
         if (docSnap.exists()) {
           const dados = docSnap.data()
+          
+          // Salva uma cópia exata do que veio do banco para o histórico
+          setProdutoOriginal(dados)
+
           setNome(dados.nome || '')
           setCodigoBarras(dados.codigoBarras || '')
           setCategoria(dados.categoria || '')
@@ -156,14 +165,44 @@ export default function EditarProduto() {
     try {
       const arrayImagensComprimidas = await processarECompressarImagens()
 
+      const novoPrecoNum = parseFloat(preco)
+      const novaQtdNum = parseInt(quantidade, 10) || 0
+
+      // LÓGICA DO HISTÓRICO DETALHADO
+      let mudancas = []
+      if (produtoOriginal) {
+        if (nome !== produtoOriginal.nome) {
+          mudancas.push(`Nome alterado de "${produtoOriginal.nome}" para "${nome}"`)
+        }
+        if (novoPrecoNum !== parseFloat(produtoOriginal.preco || 0)) {
+          mudancas.push(`Preço de ${formatoMoeda(produtoOriginal.preco)} para ${formatoMoeda(novoPrecoNum)}`)
+        }
+        if (novaQtdNum !== parseInt(produtoOriginal.quantidade || 0, 10)) {
+          mudancas.push(`Quantidade de ${produtoOriginal.quantidade || 0} para ${novaQtdNum}`)
+        }
+        if (codigoBarras !== (produtoOriginal.codigoBarras || '')) {
+          mudancas.push(`Código de barras modificado`)
+        }
+        if ((categoria || 'Sem Categoria') !== (produtoOriginal.categoria || 'Sem Categoria')) {
+          mudancas.push(`Categoria modificada`)
+        }
+        if (descricao.trim() !== (produtoOriginal.descricao || '').trim()) {
+          mudancas.push(`Descrição modificada`)
+        }
+      }
+
+      const textoDetalhes = mudancas.length > 0 
+        ? `Modificações: ${mudancas.join(', ')}.` 
+        : `Atualização de imagens ou configurações visuais do catálogo.`
+
       const dadosAtualizados = {
         nome,
         codigoBarras,
         categoria: categoria || 'Sem Categoria',
         descricao: descricao.trim(),
-        preco: parseFloat(preco),
+        preco: novoPrecoNum,
         precoAntigo: precoAntigo ? parseFloat(precoAntigo) : null,
-        quantidade: parseInt(quantidade, 10) || 0,
+        quantidade: novaQtdNum,
         visivelCatalogo: visivelCatalogo,
         destaque: destaque,
         nomeDestaque: destaque ? nomeDestaque.trim() : null,
@@ -172,6 +211,18 @@ export default function EditarProduto() {
       }
 
       await updateDoc(doc(db, "produtos", id), dadosAtualizados)
+
+      // Grava no histórico usando o texto detalhado gerado
+      const logEstoqueEditado = {
+        idRegistro: Date.now(),
+        tipo: 'ESTOQUE',
+        data: new Date().toLocaleDateString('pt-BR'),
+        hora: new Date().toLocaleTimeString('pt-BR'),
+        produtoAlterado: nome,
+        detalhes: textoDetalhes
+      }
+      await addDoc(collection(db, "historico"), logEstoqueEditado)
+
       setSucesso(true)
       setTimeout(() => navigate('/estoque'), 1500)
     } catch (error) {
