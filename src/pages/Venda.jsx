@@ -24,7 +24,7 @@ export default function Venda() {
   const [criandoClienteRapido, setCriandoClienteRapido] = useState(false)
   const [novoClienteNome, setNovoClienteNome] = useState('')
 
-  // NOVOS ESTADOS: Modal de categorias e lista de vendedores
+  // Modal de categorias e lista de vendedores reais
   const [modalCategoriasAberta, setModalCategoriasAberta] = useState(false)
   const [vendedorNome, setVendedorNome] = useState('')
   const [listaVendedores, setListaVendedores] = useState([])
@@ -62,14 +62,13 @@ export default function Venda() {
         const listaC = queryClientes.docs.map(d => ({ id: d.id, ...d.data() }))
         setListaClientes(listaC)
 
-        // Busca os vendedores já deixando pronto para a futura integração das configurações
+        // Busca os vendedores exclusivamente das configurações
         const docRefVendedores = doc(db, "configuracoes", "vendedores")
         const docSnapVendedores = await getDoc(docRefVendedores)
         if (docSnapVendedores.exists() && docSnapVendedores.data().lista) {
           setListaVendedores(docSnapVendedores.data().lista)
         } else {
-          // Lista reserva para você conseguir usar até terminar a tela de configurações
-          setListaVendedores(['Administrador', 'Vendedor 1', 'Vendedor 2'])
+          setListaVendedores([]) // Removemos os nomes falsos, se não houver nenhum, fica vazio.
         }
       } catch (error) {
         console.error("Erro ao carregar dados na frente de caixa:", error)
@@ -415,7 +414,15 @@ export default function Venda() {
 
         {erro && <div style={{ background: '#fee2e2', color: '#ef4444', padding: '16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '500' }}><AlertCircle size={20} />{erro}</div>}
 
-        {/* BARRA DE CATEGORIAS EM DESTAQUE NO TOPO */}
+        {/* BARRA DE PESQUISA PRIMEIRO */}
+        <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexDirection: isMobile ? 'column' : 'row' }}>
+          <div style={{ display: 'flex', alignItems: 'center', background: 'white', padding: '10px 16px', borderRadius: '12px', width: '100%', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+            <Search size={20} color="#64748b" />
+            <input type="text" placeholder="Buscar produto..." value={busca} onChange={(e) => setBusca(e.target.value)} style={{ border: 'none', background: 'transparent', outline: 'none', marginLeft: '10px', width: '100%', color: '#1e1b4b', fontSize: '15px' }} />
+          </div>
+        </div>
+
+        {/* BARRA DE CATEGORIAS EM DESTAQUE LOGO ABAIXO */}
         <div style={{ display: 'flex', overflowX: 'auto', gap: '8px', paddingBottom: '4px', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
           {categoriasExibidas.map(cat => (
             <button 
@@ -463,13 +470,7 @@ export default function Venda() {
           )}
         </div>
 
-        <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexDirection: isMobile ? 'column' : 'row' }}>
-          <div style={{ display: 'flex', alignItems: 'center', background: 'white', padding: '10px 16px', borderRadius: '12px', width: '100%', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-            <Search size={20} color="#64748b" />
-            <input type="text" placeholder="Buscar produto..." value={busca} onChange={(e) => setBusca(e.target.value)} style={{ border: 'none', background: 'transparent', outline: 'none', marginLeft: '10px', width: '100%', color: '#1e1b4b', fontSize: '15px' }} />
-          </div>
-        </div>
-
+        {/* GRID DE PRODUTOS */}
         <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '140px' : '200px'}, 1fr))`, gap: '16px' }}>
           {produtosFiltrados.map((produto) => {
             const fotoPrincipal = pegarPrimeiraFoto(produto)
@@ -689,7 +690,9 @@ export default function Venda() {
                   onChange={(e) => setVendedorNome(e.target.value)} 
                   style={{ padding: '14px', borderRadius: '8px', border: '2px solid #cbd5e1', outline: 'none', fontSize: '15px', background: '#f8fafc', cursor: 'pointer' }} 
                 >
-                  <option value="" disabled>Selecione quem está finalizando a venda...</option>
+                  <option value="" disabled>
+                    {listaVendedores.length > 0 ? "Selecione quem está finalizando a venda..." : "Cadastre vendedores nas configurações primeiro"}
+                  </option>
                   {listaVendedores.map(v => (
                     <option key={v} value={v}>{v}</option>
                   ))}

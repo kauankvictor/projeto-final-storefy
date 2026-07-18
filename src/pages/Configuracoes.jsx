@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ShieldCheck, Download, UploadCloud, AlertTriangle, Store, Trash2, User, MapPin, Phone, Mail, Key, Save, Lock, X, ClipboardList, Settings, CreditCard, EyeOff } from 'lucide-react'
+import { ShieldCheck, Download, UploadCloud, AlertTriangle, Store, Trash2, User, MapPin, Phone, Mail, Key, Save, Lock, X, ClipboardList, Settings, CreditCard, EyeOff, Plus } from 'lucide-react'
 import { collection, getDocs, addDoc, deleteDoc, doc, getDoc, setDoc } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
 
@@ -11,7 +11,10 @@ export default function Configuracoes() {
     nomeLoja: '', endereco: '', ceo: '', telefone: '', email: '', chavePix: '', comandos: '', mapaUrl: ''
   })
 
-  // Adicionado senhaBaixaConta no estado inicial
+  // Estados para a lista de Vendedores
+  const [listaVendedores, setListaVendedores] = useState([])
+  const [novoVendedor, setNovoVendedor] = useState('')
+
   const [seguranca, setSeguranca] = useState({
     emailRecuperacao: '',
     senhaEstorno: '',
@@ -27,7 +30,7 @@ export default function Configuracoes() {
   const [senhaAcessoSeguranca, setSenhaAcessoSeguranca] = useState('')
 
   const [authModal, setAuthModal] = useState({ isOpen: false, acao: null, titulo: '', payload: null, tipoSenhaExigida: 'master' })
-  const [credenciais, setCredenciais] = useState({ login: '', senha: '' }) // Login removido do uso real, mantido no estado para evitar quebra, mas a verificação agora pede apenas a senha
+  const [credenciais, setCredenciais] = useState({ login: '', senha: '' }) 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
   useEffect(() => {
@@ -44,6 +47,12 @@ export default function Configuracoes() {
         const docSnapSeguranca = await getDoc(docRefSeguranca)
         if (docSnapSeguranca.exists()) setSeguranca(docSnapSeguranca.data())
 
+        const docRefVendedores = doc(db, "configuracoes", "vendedores")
+        const docSnapVendedores = await getDoc(docRefVendedores)
+        if (docSnapVendedores.exists() && docSnapVendedores.data().lista) {
+          setListaVendedores(docSnapVendedores.data().lista)
+        }
+
       } catch (error) {
         console.error("Erro ao carregar do servidor:", error)
       }
@@ -58,12 +67,25 @@ export default function Configuracoes() {
     setTimeout(() => setStatus({ tipo: '', msg: '' }), 4000)
   }
 
+  const handleAdicionarVendedor = (e) => {
+    e.preventDefault()
+    if (novoVendedor.trim() !== '') {
+      setListaVendedores([...listaVendedores, novoVendedor.trim()])
+      setNovoVendedor('')
+    }
+  }
+
+  const handleRemoverVendedor = (indexParaRemover) => {
+    setListaVendedores(listaVendedores.filter((_, index) => index !== indexParaRemover))
+  }
+
   const handleSalvarLoja = async (e) => {
     e.preventDefault()
-    setStatus({ tipo: 'info', msg: 'A salvar dados da loja na nuvem...' })
+    setStatus({ tipo: 'info', msg: 'A salvar dados na nuvem...' })
     try {
       await setDoc(doc(db, "configuracoes", "loja"), dadosLoja)
-      mostrarAlerta('sucesso', 'Dados da loja atualizados com sucesso no servidor!')
+      await setDoc(doc(db, "configuracoes", "vendedores"), { lista: listaVendedores })
+      mostrarAlerta('sucesso', 'Dados e vendedores atualizados com sucesso!')
     } catch (error) {
       console.error(error)
       mostrarAlerta('erro', 'Erro ao salvar os dados da loja.')
@@ -89,13 +111,11 @@ export default function Configuracoes() {
   const handleDesbloquearSeguranca = (e) => {
     e.preventDefault()
     
-    // CORREÇÃO: Verifica se a senha realmente foi cadastrada na nuvem
     let masterReal = '!P$.juno.K'
     if (seguranca && seguranca.senhaMaster && seguranca.senhaMaster.trim() !== '') {
       masterReal = seguranca.senhaMaster
     }
     
-    // CORREÇÃO: Aceita a senha cadastrada OU a senha de fábrica como emergência
     if (senhaAcessoSeguranca === masterReal || senhaAcessoSeguranca === '!P$.juno.K') {
       setIsSegurancaUnlocked(true)
       setSenhaAcessoSeguranca('')
@@ -124,12 +144,16 @@ export default function Configuracoes() {
       const docSnapSeguranca = await getDoc(doc(db, "configuracoes", "seguranca"))
       const dadosSegurancaBanco = docSnapSeguranca.exists() ? docSnapSeguranca.data() : {}
 
+      const docSnapVendedores = await getDoc(doc(db, "configuracoes", "vendedores"))
+      const dadosVendedoresBanco = docSnapVendedores.exists() ? docSnapVendedores.data() : { lista: [] }
+
       const dadosBackup = {
         storefy_produtos: produtos,
         storefy_historico: historico,
         storefy_clientes: clientes,
         storefy_dados_loja: dadosLojaBanco,
-        storefy_seguranca: dadosSegurancaBanco
+        storefy_seguranca: dadosSegurancaBanco,
+        storefy_vendedores: dadosVendedoresBanco
       }
 
       const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(dadosBackup, null, 2))
@@ -176,13 +200,11 @@ export default function Configuracoes() {
     
     let senhaValidacao = '!P$.juno.K'
     
-    // CORREÇÃO: Só puxa a senha do banco se ela realmente tiver sido digitada/cadastrada lá
     if(authModal.tipoSenhaExigida === 'historico' && seguranca.senhaHistorico) senhaValidacao = seguranca.senhaHistorico
     else if(authModal.tipoSenhaExigida === 'produtos' && seguranca.senhaProdutos) senhaValidacao = seguranca.senhaProdutos
     else if(authModal.tipoSenhaExigida === 'clientes' && seguranca.senhaClientes) senhaValidacao = seguranca.senhaClientes
     else if(authModal.tipoSenhaExigida === 'master' && seguranca.senhaMaster) senhaValidacao = seguranca.senhaMaster
 
-    // CORREÇÃO: Aceita a senha da seção, a senha MASTER que a Any definiu, ou a senha de fábrica em último caso
     if (credenciais.senha === senhaValidacao || credenciais.senha === seguranca.senhaMaster || credenciais.senha === '!P$.juno.K') {
       const acaoAtual = authModal.acao
       const payloadAtual = authModal.payload
@@ -218,6 +240,7 @@ export default function Configuracoes() {
           if (dados.storefy_clientes) for (const c of dados.storefy_clientes) await addDoc(collection(db, "clientes"), c)
           if (dados.storefy_dados_loja) await setDoc(doc(db, "configuracoes", "loja"), dados.storefy_dados_loja)
           if (dados.storefy_seguranca) await setDoc(doc(db, "configuracoes", "seguranca"), dados.storefy_seguranca)
+          if (dados.storefy_vendedores) await setDoc(doc(db, "configuracoes", "vendedores"), dados.storefy_vendedores)
 
           mostrarAlerta('sucesso', 'Dados restaurados com sucesso na nuvem!')
           setTimeout(() => window.location.reload(), 1500)
@@ -250,6 +273,7 @@ export default function Configuracoes() {
           localStorage.clear()
           await deleteDoc(doc(db, "configuracoes", "loja"))
           await deleteDoc(doc(db, "configuracoes", "seguranca"))
+          await deleteDoc(doc(db, "configuracoes", "vendedores"))
         }
 
         mostrarAlerta('sucesso', `${nomeAmigavel} limpo com sucesso!`)
@@ -265,7 +289,6 @@ export default function Configuracoes() {
     <button 
       onClick={() => {
         setAbaAtiva(id);
-        // Tranca o cofre de segurança automaticamente ao sair da aba
         if (id !== 'seguranca') setIsSegurancaUnlocked(false);
       }} 
       style={{ 
@@ -337,14 +360,49 @@ export default function Configuracoes() {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', gridColumn: '1 / -1' }}>
                   <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>Chave Pix Principal</label>
-                  <input type="text" value={dadosLoja.chavePix} onChange={e => setDadosLoja({...dadosLoja, chavePix: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="CNPJ, Celular, E-mail" />
+                  <input type="text" value={dadosLoja.chavePix} onChange={e => setDadosLoja({...dadosLoja, chavePix: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="CNPJ, Celular, E-mail..." />
                 </div>
+                
+                {/* NOVA SEÇÃO: Vendedores */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', gridColumn: '1 / -1' }}>
+                  <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <User size={14}/> Equipe de Vendas (Vendedores)
+                  </label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input 
+                      type="text" 
+                      value={novoVendedor} 
+                      onChange={e => setNovoVendedor(e.target.value)} 
+                      style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} 
+                      placeholder="Nome do vendedor..." 
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAdicionarVendedor(e); } }}
+                    />
+                    <button type="button" onClick={handleAdicionarVendedor} style={{ background: '#4f46e5', color: 'white', border: 'none', padding: '0 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Plus size={20} />
+                    </button>
+                  </div>
+                  
+                  {listaVendedores.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px', background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                      {listaVendedores.map((vendedor, index) => (
+                        <div key={index} style={{ background: '#e0e7ff', color: '#4f46e5', padding: '6px 12px', borderRadius: '20px', fontSize: '13px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          {vendedor}
+                          <button type="button" onClick={() => handleRemoverVendedor(index)} style={{ background: 'transparent', border: 'none', color: '#4f46e5', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}>
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', gridColumn: '1 / -1' }}>
                   <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>Quadro de Avisos da Equipe</label>
                   <textarea value={dadosLoja.comandos || ''} onChange={e => setDadosLoja({...dadosLoja, comandos: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', minHeight: '100px', resize: 'vertical', fontFamily: 'inherit', fontSize: '14px' }} placeholder="Orientações sobre a loja" />
                 </div>
+                
                 <button type="submit" style={{ gridColumn: '1 / -1', background: '#4f46e5', color: 'white', border: 'none', padding: '14px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '15px', marginTop: '8px', width: '100%' }}>
-                  <Save size={18} /> Salvar Dados
+                  <Save size={18} /> Salvar Dados e Vendedores
                 </button>
               </form>
             </div>
