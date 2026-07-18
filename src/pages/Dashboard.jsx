@@ -1,39 +1,33 @@
 import { useState, useEffect } from 'react'
-import { TrendingUp, Package, AlertTriangle, Clock as ClockIcon, Users, Calendar, ShieldAlert, CheckCircle, ArrowRight, Link as LinkIcon, Plus, ExternalLink, Trash2, X, ClipboardList } from 'lucide-react'
+import { TrendingUp, Package, AlertTriangle, Clock as ClockIcon, Calendar, ArrowRight, ClipboardList, Activity } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router-dom'
-
-
 import { collection, getDocs } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
+
+// Importação da Biblioteca de Gráficos
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 
 export default function Dashboard() {
   const navigate = useNavigate()
   const location = useLocation() 
   
-  
   const [agora, setAgora] = useState(new Date())
-  const [linksRapidos, setLinksRapidos] = useState([])
-  const [modalLink, setModalLink] = useState(false)
-  const [novoLinkNome, setNovoLinkNome] = useState('')
-  const [novoLinkUrl, setNovoLinkUrl] = useState('')
-  
   const [lembretes, setLembretes] = useState('')
   const [carregando, setCarregando] = useState(true)
 
   const [metricas, setMetricas] = useState({
     faturamentoHoje: 0,
     totalProdutos: 0,
-    estoqueBaixoCount: 0,
-    clientesComDebito: 0
+    estoqueBaixoCount: 0
   })
   
-  const [alertasContas, setAlertasContas] = useState([])
-  const [produtosEsgotados, setProdutosEsgotados] = useState([])
   const [produtosEstoqueBaixo, setProdutosEstoqueBaixo] = useState([]) 
-
   const [ultimasAtividades, setUltimasAtividades] = useState([])
 
-  
+  // Estados para os gráficos
+  const [dadosGraficoSemana, setDadosGraficoSemana] = useState([])
+  const [dadosGraficoPagamentos, setDadosGraficoPagamentos] = useState([])
+
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
   useEffect(() => {
@@ -42,7 +36,6 @@ export default function Dashboard() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  
   useEffect(() => {
     const timer = setInterval(() => setAgora(new Date()), 1000)
     return () => clearInterval(timer)
@@ -51,78 +44,80 @@ export default function Dashboard() {
   const dataFormatada = agora.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
   const horaFormatada = agora.toLocaleTimeString('pt-BR')
 
-  
+  const formatarMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor)
+
   const carregarDadosDoBanco = async () => {
     try {
-      // Busca dados em tempo real diretamente do Cloud Firestore
       const queryProdutos = await getDocs(collection(db, "produtos"))
       const produtos = queryProdutos.docs.map(doc => ({ id: doc.id, ...doc.data() }))
 
       const queryHistorico = await getDocs(collection(db, "historico"))
       const historico = queryHistorico.docs.map(doc => ({ id: doc.id, ...doc.data() }))
 
-      const queryClientes = await getDocs(collection(db, "clientes"))
-      const clientes = queryClientes.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-
       localStorage.setItem('storefy_produtos', JSON.stringify(produtos))
-
-      const links = JSON.parse(localStorage.getItem('storefy_links')) || []
       const notasSalvas = localStorage.getItem('storefy_lembretes') || ''
+      setLembretes(notasSalvas)
 
-      setLinksRapidos(links)
-      setLembretes(notesSalvas => notasSalvas)
-
-      // Calcula Faturamento do Dia baseado na data de hoje
-      const hojeStr = new Date().toLocaleDateString('pt-BR')
-      const faturamentoHoje = historico
-        .filter(h => (h.tipo === 'VENDA' || h.tipo === 'FIADO') && h.data === hojeStr)
-        .reduce((total, venda) => total + (Number(venda.total) || 0), 0)
-
-      const estoqueBaixo = produtos.filter(p => Number(p.quantidade) === 1)
-      const esgotados = produtos.filter(p => Number(p.quantidade) === 0)
-
-      let countClientesDebito = 0
-      let listaAlertasVencimento = []
+      // Calcula Faturamento do Dia
+      const hojeDate = new Date()
+      const hojeStr = hojeDate.toLocaleDateString('pt-BR')
       
-      const dataAtual = new Date()
-      dataAtual.setHours(0, 0, 0, 0)
+      const vendasHoje = historico.filter(h => (h.tipo === 'VENDA' || h.tipo === 'FIADO') && h.data === hojeStr)
+      const faturamentoHoje = vendasHoje.reduce((total, venda) => total + (Number(venda.total) || 0), 0)
 
-      clientes.forEach(cliente => {
-        let temDebitoAtivo = false
-        const anotacoesCliente = cliente.anotacoes || []
-        
-        anotacoesCliente.forEach(nota => {
-          if (nota.status === 'Pendente') {
-            temDebitoAtivo = true
-            if (nota.dataVencimento && nota.dataVencimento !== 'Sem prazo' && nota.dataVencimento.includes('/')) {
-              const [dia, mes, ano] = nota.dataVencimento.split('/')
-              const dataVencimentoNota = new Date(ano, mes - 1, dia)
-              const diffDias = Math.ceil((dataVencimentoNota - dataAtual) / (1000 * 60 * 60 * 24))
-
-              if (diffDias < 0) {
-                listaAlertasVencimento.push({ clienteNome: cliente.nome, texto: nota.texto, prazo: nota.dataVencimento, status: 'Atrasado', cor: '#ef4444' })
-              } else if (diffDias <= 3) { 
-                listaAlertasVencimento.push({ clienteNome: cliente.nome, texto: nota.texto, prazo: nota.dataVencimento, status: diffDias === 0 ? 'Vence Hoje' : `Vence em ${diffDias} dias`, cor: '#f59e0b' })
-              }
-            }
-          }
-        })
-        if (temDebitoAtivo) countClientesDebito++
+      // ================= GERAR DADOS PARA O GRÁFICO DE PIZZA (PAGAMENTOS HOJE) =================
+      let pagamentos = { Pix: 0, Dinheiro: 0, Cartão: 0, Fiado: 0 }
+      vendasHoje.forEach(v => {
+        const valor = Number(v.total) || 0
+        const forma = String(v.formaPagamento || '').toLowerCase()
+        if (forma.includes('pix')) pagamentos.Pix += valor
+        else if (forma.includes('cart') || forma.includes('créd') || forma.includes('déb')) pagamentos.Cartão += valor
+        else if (forma.includes('dinh') || forma.includes('espéc')) pagamentos.Dinheiro += valor
+        else if (forma.includes('fia') || forma.includes('anot')) pagamentos.Fiado += valor
+        else pagamentos.Dinheiro += valor
       })
+
+      const dadosPizza = [
+        { name: 'Pix', value: pagamentos.Pix, color: '#10b981' }, // Verde
+        { name: 'Dinheiro', value: pagamentos.Dinheiro, color: '#f59e0b' }, // Amarelo
+        { name: 'Cartão', value: pagamentos.Cartão, color: '#3b82f6' }, // Azul
+        { name: 'Fiado', value: pagamentos.Fiado, color: '#ef4444' } // Vermelho
+      ].filter(d => d.value > 0) // Só mostra o que tiver valor
+
+      setDadosGraficoPagamentos(dadosPizza)
+
+      // ================= GERAR DADOS PARA O GRÁFICO DE LINHA (ÚLTIMOS 7 DIAS) =================
+      const dadosSemana = []
+      for (let i = 6; i >= 0; i--) {
+        const dataAlvo = new Date()
+        dataAlvo.setDate(hojeDate.getDate() - i)
+        const dataAlvoStr = dataAlvo.toLocaleDateString('pt-BR')
+        
+        const faturamentoDia = historico
+          .filter(h => (h.tipo === 'VENDA' || h.tipo === 'FIADO') && h.data === dataAlvoStr)
+          .reduce((total, venda) => total + (Number(venda.total) || 0), 0)
+
+        dadosSemana.push({
+          dia: dataAlvo.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '').toUpperCase(),
+          total: faturamentoDia,
+          dataCompleta: dataAlvoStr
+        })
+      }
+      setDadosGraficoSemana(dadosSemana)
+
+      // Estoque Crítico
+      const estoqueBaixo = produtos.filter(p => Number(p.quantidade) === 1 || Number(p.quantidade) === 0)
 
       setMetricas({
         faturamentoHoje,
         totalProdutos: produtos.length,
-        estoqueBaixoCount: estoqueBaixo.length,
-        clientesComDebito: countClientesDebito
+        estoqueBaixoCount: estoqueBaixo.length
       })
-      setAlertasContas(listaAlertasVencimento)
-      setProdutosEsgotados(esgotados)
       setProdutosEstoqueBaixo(estoqueBaixo) 
       
-      // Ordena o histórico para exibir as transações mais recentes no topo
       const historicoOrdenado = historico.sort((a, b) => (b.idRegistro || 0) - (a.idRegistro || 0))
       setUltimasAtividades(historicoOrdenado.slice(0, 5))
+
     } catch (error) {
       console.error("Erro ao sincronizar painel de controle:", error)
     } finally {
@@ -132,39 +127,9 @@ export default function Dashboard() {
 
   useEffect(() => {
     carregarDadosDoBanco()
-
     window.addEventListener('focus', carregarDadosDoBanco)
     return () => window.removeEventListener('focus', carregarDadosDoBanco)
   }, [location.pathname, location.key])
-
-  const handleSalvarLink = (e) => {
-    e.preventDefault()
-    if (!novoLinkNome.trim() || !novoLinkUrl.trim()) return
-
-    let urlCorrigida = novoLinkUrl
-    if (!urlCorrigida.startsWith('http')) {
-      urlCorrigida = 'https://' + urlCorrigida
-    }
-
-    const novoLink = { id: Date.now(), nome: novoLinkNome, url: urlCorrigida }
-    const listaAtualizada = [...linksRapidos, novoLink]
-    
-    setLinksRapidos(listaAtualizada)
-    localStorage.setItem('storefy_links', JSON.stringify(listaAtualizada))
-    
-    setNovoLinkNome('')
-    setNovoLinkUrl('')
-    setModalLink(false)
-  }
-
-  const handleExcluirLink = (id, nomeLink) => {
-    const confirmar = window.confirm(`Deseja mesmo excluir o link de "${nomeLink}"?`)
-    if (confirmar) {
-      const listaAtualizada = linksRapidos.filter(link => link.id !== id)
-      setLinksRapidos(listaAtualizada)
-      localStorage.setItem('storefy_links', JSON.stringify(listaAtualizada))
-    }
-  }
 
   const handleMudarLembretes = (txt) => {
     setLembretes(txt)
@@ -178,11 +143,11 @@ export default function Dashboard() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', boxSizing: 'border-box', width: '100%' }}>
       
-      {}
+      {/* CABEÇALHO */}
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', flexWrap: 'wrap', gap: '16px', flexDirection: isMobile ? 'column' : 'row' }}>
         <div>
-          <h1 style={{ fontSize: isMobile ? '24px' : '30px', color: '#1e1b4b', fontWeight: 'bold', margin: 0 }}>Painel de Controle</h1>
-          <p style={{ color: '#64748b', marginTop: '4px', fontSize: isMobile ? '14px' : '15px', margin: 0 }}>Resumo financeiro da loja</p>
+          <h1 style={{ fontSize: isMobile ? '24px' : '30px', color: '#1e1b4b', fontWeight: 'bold', margin: 0 }}>Visão Geral</h1>
+          <p style={{ color: '#64748b', marginTop: '4px', fontSize: isMobile ? '14px' : '15px', margin: 0 }}>Acompanhe o desempenho da sua loja em tempo real</p>
         </div>
         
         <div style={{ textAlign: isMobile ? 'center' : 'right', background: 'white', padding: '12px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', boxSizing: 'border-box', width: isMobile ? '100%' : 'auto' }}>
@@ -191,226 +156,186 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fit, minmax(200px, 1fr))', gap: isMobile ? '12px' : '20px' }}>
+      {/* MÉTRICAS RÁPIDAS */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(250px, 1fr))', gap: isMobile ? '12px' : '20px' }}>
         
-        <div style={{ background: 'white', padding: isMobile ? '16px' : '20px', borderRadius: '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.01)', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #312e81 100%)', padding: isMobile ? '20px' : '24px', borderRadius: '20px', boxShadow: '0 10px 15px -3px rgba(79, 70, 229, 0.3)', display: 'flex', flexDirection: 'column', gap: '12px', color: 'white' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ background: '#d1fae5', color: '#059669', padding: '8px', borderRadius: '8px', display: 'flex' }}><TrendingUp size={16} /></div>
-            <p style={{ color: '#64748b', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', margin: 0 }}>Vendas Hoje</p>
+            <div style={{ background: 'rgba(255,255,255,0.2)', padding: '8px', borderRadius: '8px', display: 'flex' }}><TrendingUp size={16} /></div>
+            <p style={{ fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', margin: 0, letterSpacing: '0.5px' }}>Faturamento de Hoje</p>
           </div>
-          <h2 style={{ fontSize: isMobile ? '18px' : '24px', color: '#1e1b4b', fontWeight: '900', margin: 0 }}>
-            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(metricas.faturamentoHoje)}
+          <h2 style={{ fontSize: isMobile ? '28px' : '32px', fontWeight: '900', margin: 0 }}>
+            {formatarMoeda(metricas.faturamentoHoje)}
           </h2>
         </div>
 
-        <div style={{ background: 'white', padding: isMobile ? '16px' : '20px', borderRadius: '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.01)', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ background: '#fee2e2', color: '#ef4444', padding: '8px', borderRadius: '8px', display: 'flex' }}><Users size={16} /></div>
-            <p style={{ color: '#64748b', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', margin: 0 }}>Devedores</p>
-          </div>
-          <h2 style={{ fontSize: isMobile ? '18px' : '24px', color: '#1e1b4b', fontWeight: '900', margin: 0 }}>{metricas.clientesComDebito}</h2>
-        </div>
-
-        <div style={{ background: 'white', padding: isMobile ? '16px' : '20px', borderRadius: '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.01)', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ background: '#fef3c7', color: '#d97706', padding: '8px', borderRadius: '8px', display: 'flex' }}><AlertTriangle size={16} /></div>
-            <p style={{ color: '#64748b', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', margin: 0 }}>Estoque Baixo</p>
-          </div>
-          <h2 style={{ fontSize: isMobile ? '18px' : '24px', color: '#1e1b4b', fontWeight: '900', margin: 0 }}>{metricas.estoqueBaixoCount}</h2>
-        </div>
-
-        <div style={{ background: 'white', padding: isMobile ? '16px' : '20px', borderRadius: '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.01)', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ background: 'white', padding: isMobile ? '20px' : '24px', borderRadius: '20px', boxShadow: '0 4px 6px rgba(0,0,0,0.01)', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div style={{ background: '#e0e7ff', color: '#4f46e5', padding: '8px', borderRadius: '8px', display: 'flex' }}><Package size={16} /></div>
-            <p style={{ color: '#64748b', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', margin: 0 }}>Produtos</p>
+            <p style={{ color: '#64748b', fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', margin: 0, letterSpacing: '0.5px' }}>Produtos no Catálogo</p>
           </div>
-          <h2 style={{ fontSize: isMobile ? '18px' : '24px', color: '#1e1b4b', fontWeight: '900', margin: 0 }}>{metricas.totalProdutos}</h2>
+          <h2 style={{ fontSize: isMobile ? '24px' : '28px', color: '#1e1b4b', fontWeight: '900', margin: 0 }}>{metricas.totalProdutos}</h2>
+        </div>
+
+        <div style={{ background: 'white', padding: isMobile ? '20px' : '24px', borderRadius: '20px', boxShadow: '0 4px 6px rgba(0,0,0,0.01)', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ background: '#fef3c7', color: '#d97706', padding: '8px', borderRadius: '8px', display: 'flex' }}><AlertTriangle size={16} /></div>
+            <p style={{ color: '#64748b', fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', margin: 0, letterSpacing: '0.5px' }}>Itens em Risco (Esgotando)</p>
+          </div>
+          <h2 style={{ fontSize: isMobile ? '24px' : '28px', color: '#1e1b4b', fontWeight: '900', margin: 0 }}>{metricas.estoqueBaixoCount}</h2>
         </div>
 
       </div>
 
-      {}
+      {/* ÁREA DOS GRÁFICOS */}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr', gap: '24px', alignItems: 'start', width: '100%' }}>
         
-        {}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', width: '100%' }}>
-          
-          <div style={{ background: 'white', padding: isMobile ? '16px' : '24px', borderRadius: '20px', boxShadow: '0 4px 6px rgba(0,0,0,0.01)', border: '1px solid #f1f5f9', boxSizing: 'border-box', width: '100%' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
-              <h3 style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', margin: 0 }}>
-                <LinkIcon size={18} color="#4f46e5" /> Links favoritos
-              </h3>
-              <button onClick={() => setModalLink(true)} style={{ background: '#f1f5f9', color: '#4f46e5', border: 'none', padding: '8px 12px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Plus size={16}/> Adicionar
-              </button>
-            </div>
-            
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-              {linksRapidos.length === 0 ? (
-                <p style={{ fontSize: '14px', color: '#94a3b8', fontStyle: 'italic', margin: 0 }}>Adicione seus atalhos</p>
-              ) : (
-                linksRapidos.map(link => (
-                  <div key={link.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', background: '#f8fafc', padding: '10px 14px', borderRadius: '12px', border: '1px solid #e2e8f0', maxWidth: '100%', boxSizing: 'border-box' }}>
-                    <a href={link.url} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', color: '#1e1b4b', fontSize: '13px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {link.nome} <ExternalLink size={14} color="#64748b"/>
-                    </a>
-                    <div style={{ width: '1px', height: '16px', background: '#cbd5e1', flexShrink: 0 }}></div>
-                    <button onClick={() => handleExcluirLink(link.id, link.nome)} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', display: 'flex', padding: '0' }}><Trash2 size={16} /></button>
-                  </div>
-                ))
-              )}
-            </div>
+        {/* GRÁFICO DE FATURAMENTO DA SEMANA */}
+        <div style={{ background: 'white', padding: '24px', borderRadius: '20px', border: '1px solid #f1f5f9', boxShadow: '0 4px 6px rgba(0,0,0,0.01)', boxSizing: 'border-box', width: '100%' }}>
+          <h3 style={{ fontSize: '16px', color: '#1e1b4b', fontWeight: 'bold', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '8px', margin: '0 0 24px 0' }}>
+            <Activity size={20} color="#4f46e5" /> Faturamento dos Últimos 7 Dias
+          </h3>
+          <div style={{ width: '100%', height: 300 }}>
+            <ResponsiveContainer>
+              <AreaChart data={dadosGraficoSemana} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.8}/>
+                    <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="dia" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} dy={10} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} tickFormatter={(value) => `R$${value}`} />
+                <Tooltip 
+                  formatter={(value) => [formatarMoeda(value), "Faturamento"]} 
+                  labelFormatter={(label) => `Dia: ${label}`}
+                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                />
+                <Area type="monotone" dataKey="total" stroke="#4f46e5" strokeWidth={3} fillOpacity={1} fill="url(#colorTotal)" />
+              </AreaChart>
+            </ResponsiveContainer>
           </div>
-
-          <div style={{ background: 'white', padding: isMobile ? '16px' : '28px', borderRadius: '20px', boxShadow: '0 4px 6px rgba(0,0,0,0.01)', border: '1px solid #f1f5f9', boxSizing: 'border-box', width: '100%' }}>
-            <h3 style={{ fontSize: '16px', color: '#1e1b4b', fontWeight: 'bold', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', margin: 0, paddingBottom: '12px' }}>
-              <ClockIcon size={20} color="#4f46e5" /> Atividades Recentes do Sistema
-            </h3>
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              {ultimasAtividades.length === 0 ? (
-                <p style={{ color: '#94a3b8', fontStyle: 'italic', textAlign: 'center', padding: '20px', margin: 0 }}>Nenhuma movimentação recente localizada.</p>
-              ) : (
-                ultimasAtividades.map((atividade) => (
-                  <div key={atividade.idRegistro} style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', padding: '16px 0', borderBottom: '1px solid #f8fafc', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '8px' : '0' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <span style={{ fontSize: '14px', fontWeight: '600', color: '#1e1b4b' }}>
-                        {atividade.tipo === 'VENDA' ? 'Venda Concluída' : (atividade.tipo === 'FIADO' ? 'Venda Fiado Registrada' : 'Atualização de Sistema')}
-                      </span>
-                      <span style={{ fontSize: '13px', color: '#64748b' }}>
-                        {atividade.total 
-                          ? `Total: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(atividade.total)} via ${atividade.formaPagamento || 'Não inf.'}`
-                          : `Modificação aplicada nos registros do estoque.`
-                        }
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: isMobile ? 'row' : 'column', alignItems: isMobile ? 'center' : 'flex-end', color: '#94a3b8', fontSize: '11px', gap: isMobile ? '8px' : '2px', width: isMobile ? '100%' : 'auto', borderTop: isMobile ? '1px dashed #e2e8f0' : 'none', paddingTop: isMobile ? '6px' : '0' }}>
-                      <span>{atividade.data}</span>
-                      {!isMobile && <ClockIcon size={10} style={{ display: 'none' }} />}
-                      <span>{atividade.hora}</span>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* BOTÕES DE ATALHO RÁPIDO RESPONSIVOS */}
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', width: '100%' }}>
-            <button onClick={() => navigate('/venda')} style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)', color: 'white', border: 'none', padding: '18px', borderRadius: '16px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 4px 12px rgba(79, 70, 229, 0.2)', fontSize: '15px' }}>
-              <span>Ir para Frente de Caixa</span> <ArrowRight size={18} />
-            </button>
-            <button onClick={() => navigate('/clientes')} style={{ background: '#fff', color: '#1e1b4b', border: '1px solid #e2e8f0', padding: '18px', borderRadius: '16px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '15px' }}>
-              <span>Gerenciar Clientes</span> <ArrowRight size={18} color="#4f46e5" />
-            </button>
-          </div>
-
         </div>
 
-        {/* COLUNA DIREITA */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', width: '100%' }}>
+        {/* GRÁFICO DE PIZZA (PAGAMENTOS HOJE) */}
+        <div style={{ background: 'white', padding: '24px', borderRadius: '20px', border: '1px solid #f1f5f9', boxShadow: '0 4px 6px rgba(0,0,0,0.01)', boxSizing: 'border-box', width: '100%', display: 'flex', flexDirection: 'column' }}>
+          <h3 style={{ fontSize: '16px', color: '#1e1b4b', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', margin: '0 0 16px 0' }}>
+            <TrendingUp size={20} color="#4f46e5" /> Divisão de Pagamentos (Hoje)
+          </h3>
           
-          <div style={{ background: 'white', padding: isMobile ? '16px' : '24px', borderRadius: '20px', boxShadow: '0 4px 6px rgba(0,0,0,0.01)', border: '1px solid #f1f5f9', boxSizing: 'border-box', width: '100%' }}>
-            <h3 style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '8px', margin: 0, paddingBottom: '8px' }}>
-              <ClipboardList size={18} color="#4f46e5" /> Anotações e Lembretes
-            </h3>
-            <textarea 
-              value={lembretes}
-              onChange={(e) => handleMudarLembretes(e.target.value)}
-              placeholder="..."
-              style={{ width: '100%', minHeight: '120px', padding: '12px', borderRadius: '12px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', fontFamily: 'inherit', resize: 'vertical', background: '#f8fafc', color: '#1e1b4b', lineHeight: '1.4', boxSizing: 'border-box' }}
-            />
-          </div>
-
-          <div style={{ background: 'white', padding: isMobile ? '16px' : '24px', borderRadius: '20px', boxShadow: '0 4px 6px rgba(0,0,0,0.01)', border: '1px solid #f1f5f9', boxSizing: 'border-box', width: '100%' }}>
-            <h3 style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0, paddingBottom: '4px' }}>
-              <Calendar size={18} color="#4f46e5" /> Avisos de Devedores
-            </h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {alertasContas.length === 0 ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#d1fae5', color: '#069669', padding: '12px', borderRadius: '12px', fontSize: '13px', fontWeight: '500' }}>
-                  <CheckCircle size={18} /> Nenhuma pendência em atraso hoje!
-                </div>
-              ) : (
-                alertasContas.map((alerta, index) => (
-                  <div key={index} style={{ borderLeft: `4px solid ${alerta.cor}`, background: '#f8fafc', padding: '12px 14px', borderRadius: '0 12px 12px 0', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-                      <strong style={{ fontSize: '13px', color: '#1e1b4b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{alerta.clienteNome}</strong>
-                      <span style={{ fontSize: '10px', fontWeight: 'bold', color: alerta.cor, textTransform: 'uppercase', background: '#fff', padding: '2px 6px', borderRadius: '4px', border: `1px solid ${alerta.cor}`, flexShrink: 0 }}>{alerta.status}</span>
-                    </div>
-                    <p style={{ fontSize: '12px', color: '#64748b', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{alerta.texto}</p>
-                    <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: '500' }}>Prazo: {alerta.prazo}</span>
-                  </div>
-                ))
-              )}
+          {dadosGraficoPagamentos.length === 0 ? (
+            <div style={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontStyle: 'italic', minHeight: '200px' }}>
+              Nenhuma venda hoje.
             </div>
-          </div>
-
-          {}
-          {produtosEstoqueBaixo.length > 0 && (
-            <div style={{ background: '#fffbeb', padding: isMobile ? '16px' : '24px', borderRadius: '20px', boxShadow: '0 4px 6px rgba(0,0,0,0.01)', border: '1px solid #fde68a', boxSizing: 'border-box', width: '100%' }}>
-              <h3 style={{ fontSize: '14px', fontWeight: 'bold', color: '#b45309', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>
-                <AlertTriangle size={18} color="#d97706" /> Estoque Crítico (1 un.)
-              </h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '12px' }}>
-                {produtosEstoqueBaixo.map(p => (
-                  <div key={`baixo-${p.id}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px dashed #fcd34d' }}>
-                    <span style={{ fontSize: '13px', color: '#92400e', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}>{p.nome}</span>
-                    <span style={{ background: '#fef3c7', color: '#d97706', fontSize: '10px', fontWeight: 'bold', padding: '2px 8px', borderRadius: '6px', border: '1px solid #fde68a', flexShrink: 0 }}>Comprar</span>
-                  </div>
-                ))}
-              </div>
+          ) : (
+            <div style={{ width: '100%', height: 220, position: 'relative' }}>
+              <ResponsiveContainer>
+                <PieChart>
+                  <Pie
+                    data={dadosGraficoPagamentos}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={5}
+                    dataKey="value"
+                    stroke="none"
+                  >
+                    {dadosGraficoPagamentos.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value) => formatarMoeda(value)} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }} />
+                </PieChart>
+              </ResponsiveContainer>
             </div>
           )}
 
-          <div style={{ background: 'white', padding: isMobile ? '16px' : '24px', borderRadius: '20px', boxShadow: '0 4px 6px rgba(0,0,0,0.01)', border: '1px solid #f1f5f9', boxSizing: 'border-box', width: '100%' }}>
-            <h3 style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>
-              <ShieldAlert size={18} color="#ef4444" /> Itens Esgotados
-            </h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '12px' }}>
-              {produtosEsgotados.length === 0 ? (
-                <p style={{ color: '#94a3b8', fontSize: '13px', fontStyle: 'italic', margin: 0 }}>Nenhum produto zerado no estoque.</p>
-              ) : (
-                produtosEsgotados.map(p => (
-                  <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px dashed #f1f5f9' }}>
-                    <span style={{ fontSize: '13px', color: '#1e1b4b', fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}>{p.nome}</span>
-                    <span style={{ background: '#fee2e2', color: '#ef4444', fontSize: '10px', fontWeight: 'bold', padding: '2px 8px', borderRadius: '6px', flexShrink: 0 }}>Repor</span>
-                  </div>
-                ))
-              )}
-            </div>
+          {/* Legendas do Gráfico */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', justifyContent: 'center', marginTop: '16px' }}>
+            {dadosGraficoPagamentos.map(item => (
+              <div key={item.name} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: '600', color: '#475569' }}>
+                <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: item.color }}></div>
+                {item.name}
+              </div>
+            ))}
           </div>
-
         </div>
 
       </div>
 
-      {}
-      {modalLink && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.6)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '20px', boxSizing: 'border-box' }}>
-          <div style={{ background: 'white', width: '100%', maxWidth: '400px', borderRadius: '16px', padding: isMobile ? '24px' : '32px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)', boxSizing: 'border-box' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-              <h2 style={{ fontSize: '18px', color: '#1e1b4b', fontWeight: 'bold', margin: 0 }}>Novo Link Rápido</h2>
-              <button onClick={() => setModalLink(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b', padding: 0 }}><X size={24} /></button>
-            </div>
-            
-            <form onSubmit={handleSalvarLink} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontWeight: '600', fontSize: '13px', color: '#475569' }}>Nome do Link</label>
-                <input type="text" required value={novoLinkNome} onChange={(e) => setNovoLinkNome(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px', width: '100%', boxSizing: 'border-box' }} />
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontWeight: '600', fontSize: '13px', color: '#475569' }}>URL / Endereço</label>
-                <input type="text" required value={novoLinkUrl} onChange={(e) => setNovoLinkUrl(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px', width: '100%', boxSizing: 'border-box' }} />
-              </div>
-              <button type="submit" style={{ background: '#4f46e5', color: 'white', border: 'none', padding: '14px', borderRadius: '8px', display: 'flex', justifyContent: 'center', alignItems: 'center', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px', marginTop: '8px' }}>
-                Salvar Link
-              </button>
-            </form>
+      {/* BLOCOS INFERIORES */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '24px', alignItems: 'start', width: '100%' }}>
+        
+        {/* ATIVIDADES RECENTES */}
+        <div style={{ background: 'white', padding: isMobile ? '16px' : '24px', borderRadius: '20px', boxShadow: '0 4px 6px rgba(0,0,0,0.01)', border: '1px solid #f1f5f9', boxSizing: 'border-box', width: '100%' }}>
+          <h3 style={{ fontSize: '15px', color: '#1e1b4b', fontWeight: 'bold', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', margin: '0 0 20px 0', textTransform: 'uppercase' }}>
+            <ClockIcon size={18} color="#4f46e5" /> Últimas Atividades
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {ultimasAtividades.length === 0 ? (
+              <p style={{ color: '#94a3b8', fontStyle: 'italic', textAlign: 'center', padding: '20px', margin: 0 }}>Nenhuma movimentação.</p>
+            ) : (
+              ultimasAtividades.map((atividade) => (
+                <div key={atividade.idRegistro} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #f8fafc', gap: '8px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#1e1b4b' }}>
+                      {atividade.tipo === 'VENDA' ? 'Venda Concluída' : (atividade.tipo === 'FIADO' ? 'Venda no Fiado' : 'Ajuste de Estoque')}
+                    </span>
+                    <span style={{ fontSize: '12px', color: '#64748b' }}>
+                      {atividade.total 
+                        ? `${formatarMoeda(atividade.total)} via ${atividade.formaPagamento || '-'}`
+                        : `Alteração aplicada.`
+                      }
+                    </span>
+                  </div>
+                  <div style={{ color: '#94a3b8', fontSize: '11px', textAlign: 'right' }}>
+                    <span>{atividade.hora}</span>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
-      )}
 
+        {/* ALERTA DE ESTOQUE */}
+        <div style={{ background: '#fffbeb', padding: isMobile ? '16px' : '24px', borderRadius: '20px', boxShadow: '0 4px 6px rgba(0,0,0,0.01)', border: '1px solid #fde68a', boxSizing: 'border-box', width: '100%' }}>
+          <h3 style={{ fontSize: '15px', fontWeight: 'bold', color: '#b45309', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', margin: '0 0 16px 0' }}>
+            <AlertTriangle size={18} color="#d97706" /> Reposição Urgente
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {produtosEstoqueBaixo.length === 0 ? (
+               <p style={{ color: '#b45309', fontSize: '13px', margin: 0 }}>Nenhum produto precisando de reposição no momento.</p>
+            ) : (
+              produtosEstoqueBaixo.map(p => (
+                <div key={`baixo-${p.id}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px dashed #fcd34d' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontSize: '13px', color: '#92400e', fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '150px' }}>{p.nome}</span>
+                    <span style={{ fontSize: '11px', color: p.quantidade === 0 ? '#ef4444' : '#d97706', fontWeight: '600' }}>
+                      {p.quantidade === 0 ? 'Esgotado' : `Resta 1 unidade`}
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* BLOCO DE NOTAS */}
+        <div style={{ background: 'white', padding: isMobile ? '16px' : '24px', borderRadius: '20px', boxShadow: '0 4px 6px rgba(0,0,0,0.01)', border: '1px solid #f1f5f9', boxSizing: 'border-box', width: '100%' }}>
+          <h3 style={{ fontSize: '15px', fontWeight: 'bold', color: '#1e1b4b', display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', margin: '0 0 16px 0' }}>
+            <ClipboardList size={18} color="#4f46e5" /> Lembretes Rápidos
+          </h3>
+          <textarea 
+            value={lembretes}
+            onChange={(e) => handleMudarLembretes(e.target.value)}
+            placeholder="Digite avisos ou lembretes para a equipe..."
+            style={{ width: '100%', height: '180px', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', outline: 'none', fontSize: '13px', fontFamily: 'inherit', resize: 'none', background: '#f8fafc', color: '#1e1b4b', lineHeight: '1.5', boxSizing: 'border-box' }}
+          />
+        </div>
+
+      </div>
     </div>
   )
 }
