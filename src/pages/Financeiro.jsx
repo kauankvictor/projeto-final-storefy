@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { DollarSign, ShoppingBag, CreditCard, Calendar, FileDown, PieChart } from 'lucide-react'
 
 // Importações cruciais do Firebase
-import { collection, getDocs } from 'firebase/firestore'
+import { collection, getDocs, doc, getDoc } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
 
 export default function Financeiro() {
@@ -15,8 +15,9 @@ export default function Financeiro() {
   const [dataFinal, setDataFinal] = useState(obterDataLocal()) 
   const [carregando, setCarregando] = useState(true)
   
-  // ================= ESTADOS DOS RESULTADOS =================
+  // ================= ESTADOS DOS RESULTADOS E DADOS =================
   const [vendasFiltradas, setVendasFiltradas] = useState([])
+  const [dadosLoja, setDadosLoja] = useState({ nomeLoja: 'Storefy', ceo: 'Administrador', telefone: '-', email: '-', endereco: 'Endereço não informado' })
   const [metricas, setMetricas] = useState({
     faturamentoTotal: 0,
     quantidadeVendas: 0,
@@ -33,6 +34,22 @@ export default function Financeiro() {
     const handleResize = () => setIsMobile(window.innerWidth < 768)
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  // ================= CARREGAR DADOS DA LOJA =================
+  useEffect(() => {
+    const carregarConfiguracoesNuvem = async () => {
+      try {
+        const docRefLoja = doc(db, "configuracoes", "loja")
+        const docSnapLoja = await getDoc(docRefLoja)
+        if (docSnapLoja.exists()) {
+          setDadosLoja(prev => ({ ...prev, ...docSnapLoja.data() }))
+        }
+      } catch (error) {
+        console.error("Erro ao carregar dados da loja:", error)
+      }
+    }
+    carregarConfiguracoesNuvem()
   }, [])
 
   // ================= BOTÕES RÁPIDOS =================
@@ -127,10 +144,6 @@ export default function Financeiro() {
 
   // ================= GERADOR DE RELATÓRIO PDF EXIBINDO DADOS DA NUVEM =================
   const gerarRelatorioPDF = () => {
-    const dadosLoja = JSON.parse(localStorage.getItem('storefy_dados_loja')) || {
-      nomeLoja: 'Storefy', ceo: 'Administrador', telefone: '-', email: '-'
-    }
-
     const formatoMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor)
     const janelaImpressao = window.open('', '_blank')
     
@@ -160,9 +173,10 @@ export default function Financeiro() {
         <body>
           <div class="header">
             <div>
-              <h1>${dadosLoja.nomeLoja}</h1>
-              <p>CEO: ${dadosLoja.ceo}</p>
-              <p>Contato: ${dadosLoja.telefone} | ${dadosLoja.email}</p>
+              <h1>${dadosLoja.nomeLoja || 'Loja Storefy'}</h1>
+              <p>CEO: ${dadosLoja.ceo || 'Não informado'}</p>
+              <p>Endereço: ${dadosLoja.endereco || 'Endereço não cadastrado'}</p>
+              <p>Contato: ${dadosLoja.telefone || '-'} | ${dadosLoja.email || '-'}</p>
             </div>
             <div style="text-align: right;">
               <p><strong>Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}</p>
@@ -198,7 +212,7 @@ export default function Financeiro() {
                 <tr><td>Dinheiro à Vista</td><td><strong>${formatoMoeda(metricas.dinheiro)}</strong></td></tr>
                 <tr><td>Transferência Pix</td><td><strong>${formatoMoeda(metricas.pix)}</strong></td></tr>
                 <tr><td>Cartão (Crédito/Débito)</td><td><strong>${formatoMoeda(metricas.cartao)}</strong></td></tr>
-                <tr><td>Fiado / Caderno de Notas</td><td style="color: #ef4444;">export devedores<strong>${formatoMoeda(metricas.fiado)}</strong></td></tr>
+                <tr><td>Fiado / Caderno de Notas</td><td style="color: #ef4444;"><strong>${formatoMoeda(metricas.fiado)}</strong></td></tr>
               </tbody>
             </table>
           </div>

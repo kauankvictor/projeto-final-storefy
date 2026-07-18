@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Search, Plus, Edit2, Image as ImageIcon, Filter, FileDown, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
-import { collection, getDocs } from 'firebase/firestore'
+import { collection, getDocs, doc, getDoc } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
 
 export default function Estoque() {
@@ -10,6 +10,7 @@ export default function Estoque() {
   const [busca, setBusca] = useState('')
   const [categoriaFiltro, setCategoriaFiltro] = useState('Todas')
   const [produtos, setProdutos] = useState([])
+  const [dadosLoja, setDadosLoja] = useState({ nomeLoja: 'Storefy', ceo: 'Administrador', telefone: '-', email: '-', endereco: 'Endereço não informado' })
   const [carregando, setCarregando] = useState(true)
   const [produtoSelecionado, setProdutoSelecionado] = useState(null)
 
@@ -19,6 +20,22 @@ export default function Estoque() {
     const handleResize = () => setIsMobile(window.innerWidth < 768)
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  // ================= CARREGAR DADOS DA LOJA =================
+  useEffect(() => {
+    const carregarConfiguracoesNuvem = async () => {
+      try {
+        const docRefLoja = doc(db, "configuracoes", "loja")
+        const docSnapLoja = await getDoc(docRefLoja)
+        if (docSnapLoja.exists()) {
+          setDadosLoja(prev => ({ ...prev, ...docSnapLoja.data() }))
+        }
+      } catch (error) {
+        console.error("Erro ao carregar dados da loja:", error)
+      }
+    }
+    carregarConfiguracoesNuvem()
   }, [])
 
   useEffect(() => {
@@ -57,10 +74,6 @@ export default function Estoque() {
   })
 
   const gerarPDFEstoque = () => {
-    const dadosLoja = JSON.parse(localStorage.getItem('storefy_dados_loja')) || {
-      nomeLoja: 'Storefy', ceo: 'Administrador', telefone: 'Sem telefone', email: 'Sem email'
-    }
-
     const formatoMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor)
     const janelaImpressao = window.open('', '_blank')
 
@@ -83,9 +96,10 @@ export default function Estoque() {
         <body>
           <div class="header">
             <div>
-              <h1>${dadosLoja.nomeLoja}</h1>
-              <p>CEO: ${dadosLoja.ceo}</p>
-              <p>Contato: ${dadosLoja.telefone} | ${dadosLoja.email}</p>
+              <h1>${dadosLoja.nomeLoja || 'Loja Storefy'}</h1>
+              <p>CEO: ${dadosLoja.ceo || 'Não informado'}</p>
+              <p>Endereço: ${dadosLoja.endereco || 'Endereço não cadastrado'}</p>
+              <p>Contato: ${dadosLoja.telefone || '-'} | ${dadosLoja.email || '-'}</p>
             </div>
             <div style="text-align: right;">
               <p><strong>Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}</p>

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Search, Filter, ShoppingCart, Plus, Minus, Trash2, CheckCircle, AlertCircle, Tag, UserCheck, X, Receipt, UserPlus, Image as ImageIcon } from 'lucide-react'
+import { Search, Filter, ShoppingCart, Plus, Minus, Trash2, CheckCircle, AlertCircle, Tag, UserCheck, X, Receipt, UserPlus, Image as ImageIcon, LayoutGrid } from 'lucide-react'
 
-import { collection, getDocs, addDoc, doc, updateDoc } from 'firebase/firestore'
+import { collection, getDocs, addDoc, doc, updateDoc, getDoc } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
 
 export default function Venda() {
@@ -16,7 +16,6 @@ export default function Venda() {
   const [descontoTipo, setDescontoTipo] = useState('R$')
   const [descontoValor, setDescontoValor] = useState('')
   const [modalConfirmacao, setModalConfirmacao] = useState(false)
-  const [vendedorNome, setVendedorNome] = useState('')
   const [produtoSelecionado, setProdutoSelecionado] = useState(null)
 
   const [listaClientes, setListaClientes] = useState([])
@@ -24,6 +23,11 @@ export default function Venda() {
   const [buscaCliente, setBuscaCliente] = useState('')
   const [criandoClienteRapido, setCriandoClienteRapido] = useState(false)
   const [novoClienteNome, setNovoClienteNome] = useState('')
+
+  // NOVOS ESTADOS: Modal de categorias e lista de vendedores
+  const [modalCategoriasAberta, setModalCategoriasAberta] = useState(false)
+  const [vendedorNome, setVendedorNome] = useState('')
+  const [listaVendedores, setListaVendedores] = useState([])
 
   const [erro, setErro] = useState('')
   const [sucesso, setSucesso] = useState(false)
@@ -37,6 +41,16 @@ export default function Venda() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
+  // Efeito para travar a rolagem da tela principal quando o modal de categorias abrir
+  useEffect(() => {
+    if (modalCategoriasAberta) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = 'auto'
+    }
+    return () => { document.body.style.overflow = 'auto' }
+  }, [modalCategoriasAberta])
+
   useEffect(() => {
     const carregarDadosNuvem = async () => {
       try {
@@ -47,6 +61,16 @@ export default function Venda() {
         const queryClientes = await getDocs(collection(db, "clientes"))
         const listaC = queryClientes.docs.map(d => ({ id: d.id, ...d.data() }))
         setListaClientes(listaC)
+
+        // Busca os vendedores já deixando pronto para a futura integração das configurações
+        const docRefVendedores = doc(db, "configuracoes", "vendedores")
+        const docSnapVendedores = await getDoc(docRefVendedores)
+        if (docSnapVendedores.exists() && docSnapVendedores.data().lista) {
+          setListaVendedores(docSnapVendedores.data().lista)
+        } else {
+          // Lista reserva para você conseguir usar até terminar a tela de configurações
+          setListaVendedores(['Administrador', 'Vendedor 1', 'Vendedor 2'])
+        }
       } catch (error) {
         console.error("Erro ao carregar dados na frente de caixa:", error)
         setErro("Falha ao sincronizar dados com o servidor Google.")
@@ -56,6 +80,10 @@ export default function Venda() {
   }, [sucesso])
 
   const categoriasUnicas = ['Todas', ...new Set(produtos.map(p => p.categoria))]
+  
+  // Lógica para mostrar apenas 3 categorias no mobile + o botão "Todas as Categorias"
+  const categoriasExibidas = isMobile ? categoriasUnicas.slice(0, 3) : categoriasUnicas
+  const mostrarBotaoTodasCategorias = isMobile && categoriasUnicas.length > 3
 
   const produtosFiltrados = produtos.filter(produto => {
     const termoBusca = busca.toLowerCase()
@@ -161,7 +189,7 @@ export default function Venda() {
     e.preventDefault()
 
     if (!vendedorNome.trim()) {
-      alert("Informe o nome do vendedor para prosseguir!")
+      alert("Selecione o nome do vendedor para prosseguir!")
       return
     }
 
@@ -187,6 +215,7 @@ export default function Venda() {
           valorPago: 0,
           dataVencimento: 'Sem prazo',
           dataCriacao: new Date().toLocaleDateString('pt-BR'),
+          horaCriacao: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
           status: 'Pendente'
         }
 
@@ -271,6 +300,49 @@ export default function Venda() {
         </div>
       )}
 
+      {/* MODAL DE TODAS AS CATEGORIAS NO MOBILE */}
+      {modalCategoriasAberta && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.8)', zIndex: 5000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => setModalCategoriasAberta(false)}>
+          <div style={{ background: 'white', width: '100%', maxWidth: '600px', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '24px', display: 'flex', flexDirection: 'column', maxHeight: '70vh', boxShadow: '0 -10px 25px rgba(0,0,0,0.1)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '900', color: '#1f2937', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Filter size={24} color="#4f46e5" /> Todas as Categorias
+              </h2>
+              <button onClick={() => setModalCategoriasAberta(false)} style={{ background: '#f3f4f6', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><X size={20} /></button>
+            </div>
+            
+            <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingRight: '4px' }}>
+              {categoriasUnicas.map(cat => (
+                <button
+                  key={`modal-${cat}`}
+                  onClick={() => {
+                    setCategoriaFiltro(cat)
+                    setModalCategoriasAberta(false)
+                  }}
+                  style={{
+                    padding: '16px 20px',
+                    borderRadius: '16px',
+                    fontSize: '16px',
+                    fontWeight: 'bold',
+                    textAlign: 'left',
+                    background: categoriaFiltro === cat ? '#4f46e5' : '#f9fafb',
+                    color: categoriaFiltro === cat ? 'white' : '#1f2937',
+                    border: '2px solid transparent',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL DE DETALHES DO PRODUTO */}
       {produtoSelecionado && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 4000, padding: '20px' }} onClick={() => setProdutoSelecionado(null)}>
@@ -337,22 +409,64 @@ export default function Venda() {
         paddingRight: isMobile ? '0' : '16px' 
       }}>
         <header>
-          <h1 style={{ fontSize: isMobile ? '24px' : '28px', color: '#1e1b4b' }}>Painel de vendas</h1>
-          <p style={{ color: '#64748b', marginTop: '4px', fontSize: isMobile ? '14px' : '16px' }}>Adicione os produtos no carrinho e finalize a venda</p>
+          <h1 style={{ fontSize: isMobile ? '24px' : '28px', color: '#1e1b4b' }}>Frente de Caixa</h1>
+          <p style={{ color: '#64748b', marginTop: '4px', fontSize: isMobile ? '13px' : '15px' }}>Adicione os produtos no carrinho e finalize a venda</p>
         </header>
 
         {erro && <div style={{ background: '#fee2e2', color: '#ef4444', padding: '16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '500' }}><AlertCircle size={20} />{erro}</div>}
+
+        {/* BARRA DE CATEGORIAS EM DESTAQUE NO TOPO */}
+        <div style={{ display: 'flex', overflowX: 'auto', gap: '8px', paddingBottom: '4px', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
+          {categoriasExibidas.map(cat => (
+            <button 
+              key={cat} 
+              onClick={() => setCategoriaFiltro(cat)} 
+              style={{ 
+                padding: '10px 20px', 
+                borderRadius: '10px', 
+                background: categoriaFiltro === cat ? '#4f46e5' : '#f1f5f9', 
+                color: categoriaFiltro === cat ? 'white' : '#64748b', 
+                border: 'none', 
+                fontWeight: 'bold', 
+                cursor: 'pointer', 
+                flexShrink: 0,
+                fontSize: '14px',
+                whiteSpace: 'nowrap',
+                transition: '0.2s'
+              }}
+            >
+              {cat}
+            </button>
+          ))}
+          
+          {mostrarBotaoTodasCategorias && (
+            <button 
+              onClick={() => setModalCategoriasAberta(true)} 
+              style={{ 
+                padding: '10px 20px', 
+                borderRadius: '10px', 
+                background: '#e2e8f0', 
+                color: '#1e1b4b', 
+                border: 'none', 
+                fontWeight: 'bold', 
+                cursor: 'pointer', 
+                flexShrink: 0,
+                fontSize: '14px',
+                whiteSpace: 'nowrap',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              <LayoutGrid size={16} /> Todas Categorias
+            </button>
+          )}
+        </div>
 
         <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexDirection: isMobile ? 'column' : 'row' }}>
           <div style={{ display: 'flex', alignItems: 'center', background: 'white', padding: '10px 16px', borderRadius: '12px', width: '100%', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
             <Search size={20} color="#64748b" />
             <input type="text" placeholder="Buscar produto..." value={busca} onChange={(e) => setBusca(e.target.value)} style={{ border: 'none', background: 'transparent', outline: 'none', marginLeft: '10px', width: '100%', color: '#1e1b4b', fontSize: '15px' }} />
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', background: 'white', padding: '10px 16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', gap: '10px', width: isMobile ? '100%' : 'auto' }}>
-            <Filter size={20} color="#64748b" />
-            <select value={categoriaFiltro} onChange={(e) => setCategoriaFiltro(e.target.value)} style={{ border: 'none', background: 'transparent', outline: 'none', color: '#1e1b4b', fontSize: '15px', cursor: 'pointer', width: '100%' }}>
-              {categoriasUnicas.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-            </select>
           </div>
         </div>
 
@@ -569,14 +683,17 @@ export default function Venda() {
                 <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#475569', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <UserCheck size={16}/> Vendedor / Responsável
                 </label>
-                <input 
-                  type="text" 
+                <select 
                   required
-                  placeholder="Nome de quem está finalizando..." 
                   value={vendedorNome} 
                   onChange={(e) => setVendedorNome(e.target.value)} 
-                  style={{ padding: '14px', borderRadius: '8px', border: '2px solid #cbd5e1', outline: 'none', fontSize: '15px', background: '#f8fafc' }} 
-                />
+                  style={{ padding: '14px', borderRadius: '8px', border: '2px solid #cbd5e1', outline: 'none', fontSize: '15px', background: '#f8fafc', cursor: 'pointer' }} 
+                >
+                  <option value="" disabled>Selecione quem está finalizando a venda...</option>
+                  {listaVendedores.map(v => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                </select>
               </div>
 
               <div style={{ display: 'flex', gap: '12px', marginTop: '8px', flexDirection: isMobile ? 'column' : 'row' }}>
