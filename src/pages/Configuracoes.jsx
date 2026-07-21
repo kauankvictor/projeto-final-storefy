@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ShieldCheck, Download, UploadCloud, AlertTriangle, Store, Trash2, User, MapPin, Phone, Mail, Key, Save, Lock, X, ClipboardList, Settings, CreditCard, EyeOff, Plus } from 'lucide-react'
+import { ShieldCheck, Download, UploadCloud, AlertTriangle, Store, Trash2, User, MapPin, Phone, Mail, Key, Save, Lock, X, ClipboardList, Settings, EyeOff, Plus, Palette } from 'lucide-react'
 import { collection, getDocs, addDoc, deleteDoc, doc, getDoc, setDoc } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
 
@@ -11,7 +11,10 @@ export default function Configuracoes() {
     nomeLoja: '', endereco: '', ceo: '', telefone: '', email: '', chavePix: '', comandos: '', mapaUrl: ''
   })
 
-  // Estados para a lista de Vendedores
+  // Novo Estado: Customização do Catálogo (Salvo junto com os Dados da Loja)
+  const [corCatalogo, setCorCatalogo] = useState('#db2777')
+  const [nomeCatalogo, setNomeCatalogo] = useState('Storefy')
+
   const [listaVendedores, setListaVendedores] = useState([])
   const [novoVendedor, setNovoVendedor] = useState('')
 
@@ -25,7 +28,6 @@ export default function Configuracoes() {
     senhaMaster: ''
   })
 
-  // Estados para o cofre de senhas
   const [isSegurancaUnlocked, setIsSegurancaUnlocked] = useState(false)
   const [senhaAcessoSeguranca, setSenhaAcessoSeguranca] = useState('')
 
@@ -41,7 +43,12 @@ export default function Configuracoes() {
       try {
         const docRefLoja = doc(db, "configuracoes", "loja")
         const docSnapLoja = await getDoc(docRefLoja)
-        if (docSnapLoja.exists()) setDadosLoja(docSnapLoja.data())
+        if (docSnapLoja.exists()) {
+          const dadosDB = docSnapLoja.data()
+          setDadosLoja(dadosDB)
+          if(dadosDB.corPrincipal) setCorCatalogo(dadosDB.corPrincipal)
+          if(dadosDB.nomeCatalogo) setNomeCatalogo(dadosDB.nomeCatalogo)
+        }
 
         const docRefSeguranca = doc(db, "configuracoes", "seguranca")
         const docSnapSeguranca = await getDoc(docRefSeguranca)
@@ -79,13 +86,20 @@ export default function Configuracoes() {
     setListaVendedores(listaVendedores.filter((_, index) => index !== indexParaRemover))
   }
 
+  // Modificado para salvar a cor e o nome do catálogo junto com os dados gerais
   const handleSalvarLoja = async (e) => {
     e.preventDefault()
     setStatus({ tipo: 'info', msg: 'A salvar dados na nuvem...' })
     try {
-      await setDoc(doc(db, "configuracoes", "loja"), dadosLoja)
+      const dadosParaSalvar = {
+        ...dadosLoja,
+        corPrincipal: corCatalogo,
+        nomeCatalogo: nomeCatalogo
+      }
+      
+      await setDoc(doc(db, "configuracoes", "loja"), dadosParaSalvar)
       await setDoc(doc(db, "configuracoes", "vendedores"), { lista: listaVendedores })
-      mostrarAlerta('sucesso', 'Dados e vendedores atualizados com sucesso!')
+      mostrarAlerta('sucesso', 'Configurações atualizadas com sucesso no servidor!')
     } catch (error) {
       console.error(error)
       mostrarAlerta('erro', 'Erro ao salvar os dados da loja.')
@@ -110,12 +124,10 @@ export default function Configuracoes() {
 
   const handleDesbloquearSeguranca = (e) => {
     e.preventDefault()
-    
     let masterReal = '!P$.juno.K'
     if (seguranca && seguranca.senhaMaster && seguranca.senhaMaster.trim() !== '') {
       masterReal = seguranca.senhaMaster
     }
-    
     if (senhaAcessoSeguranca === masterReal || senhaAcessoSeguranca === '!P$.juno.K') {
       setIsSegurancaUnlocked(true)
       setSenhaAcessoSeguranca('')
@@ -197,7 +209,6 @@ export default function Configuracoes() {
 
   const confirmarAcesso = async (e) => {
     e.preventDefault()
-    
     let senhaValidacao = '!P$.juno.K'
     
     if(authModal.tipoSenhaExigida === 'historico' && seguranca.senhaHistorico) senhaValidacao = seguranca.senhaHistorico
@@ -322,6 +333,7 @@ export default function Configuracoes() {
         {/* MENU LATERAL */}
         <div style={{ width: isMobile ? '100%' : '250px', flexShrink: 0, display: 'flex', flexDirection: isMobile ? 'row' : 'column', gap: '8px', overflowX: isMobile ? 'auto' : 'visible', paddingBottom: isMobile ? '10px' : '0' }}>
           <SidebarBtn id="loja" icon={<Store size={18}/>} texto="Dados da Loja" />
+          <SidebarBtn id="catalogo" icon={<Palette size={18}/>} texto="Personalizar Catálogo" />
           <SidebarBtn id="seguranca" icon={<Key size={18}/>} texto="Controle de Acessos" />
           <SidebarBtn id="manutencao" icon={<Settings size={18}/>} texto="Backups e Limpeza" />
         </div>
@@ -363,7 +375,7 @@ export default function Configuracoes() {
                   <input type="text" value={dadosLoja.chavePix} onChange={e => setDadosLoja({...dadosLoja, chavePix: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="CNPJ, Celular, E-mail..." />
                 </div>
                 
-                {/* NOVA SEÇÃO: Vendedores */}
+                {/* SEÇÃO VENDEDORES */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', gridColumn: '1 / -1' }}>
                   <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <User size={14}/> Equipe de Vendas (Vendedores)
@@ -402,7 +414,55 @@ export default function Configuracoes() {
                 </div>
                 
                 <button type="submit" style={{ gridColumn: '1 / -1', background: '#4f46e5', color: 'white', border: 'none', padding: '14px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '15px', marginTop: '8px', width: '100%' }}>
-                  <Save size={18} /> Salvar Dados e Vendedores
+                  <Save size={18} /> Salvar Configurações
+                </button>
+              </form>
+            </div>
+          )}
+
+          {/* ================= ABA: PERSONALIZAR CATÁLOGO ================= */}
+          {abaAtiva === 'catalogo' && (
+            <div>
+              <h2 style={{ fontSize: '20px', color: '#1e1b4b', fontWeight: 'bold', margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Palette size={22} color="#4f46e5" /> Identidade do Catálogo
+              </h2>
+              <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '24px', lineHeight: '1.5' }}>
+                Estas alterações refletirão imediatamente na visão do cliente quando ele abrir o seu link de vendas.
+              </p>
+
+              <form onSubmit={handleSalvarLoja} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                  <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b' }}>Nome da Loja Exibido no Topo</label>
+                  <input 
+                    type="text" 
+                    value={nomeCatalogo} 
+                    onChange={e => setNomeCatalogo(e.target.value)} 
+                    style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} 
+                    placeholder="Ex: Storefy Catálogo" 
+                  />
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                  <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b' }}>Cor Principal dos Botões</label>
+                  <p style={{ margin: 0, fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Clique no quadrado de cor para abrir a paleta de seleção.</p>
+                  
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    <input 
+                      type="color" 
+                      value={corCatalogo} 
+                      onChange={e => setCorCatalogo(e.target.value)} 
+                      style={{ width: '60px', height: '60px', padding: 0, border: 'none', borderRadius: '8px', cursor: 'pointer', background: 'transparent' }} 
+                    />
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b' }}>{corCatalogo.toUpperCase()}</span>
+                      <span style={{ fontSize: '12px', color: '#64748b' }}>Código Hexadecimal</span>
+                    </div>
+                  </div>
+                </div>
+
+                <button type="submit" style={{ background: '#10b981', color: 'white', border: 'none', padding: '14px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '15px', marginTop: '8px' }}>
+                  <Save size={18} /> Salvar e Publicar Alterações
                 </button>
               </form>
             </div>
