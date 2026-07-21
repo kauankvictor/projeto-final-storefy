@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ShieldCheck, Download, UploadCloud, AlertTriangle, Store, Trash2, User, MapPin, Phone, Mail, Key, Save, Lock, X, ClipboardList, Settings, EyeOff, Plus, Palette } from 'lucide-react'
+import { ShieldCheck, Download, UploadCloud, AlertTriangle, Store, Trash2, User, MapPin, Phone, Mail, Key, Save, Lock, X, ClipboardList, Settings, EyeOff, Plus, Palette, Image as ImageIcon, Share2, Globe, Link as LinkIcon, MessageCircle } from 'lucide-react'
 import { collection, getDocs, addDoc, deleteDoc, doc, getDoc, setDoc } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
 
@@ -11,9 +11,13 @@ export default function Configuracoes() {
     nomeLoja: '', endereco: '', ceo: '', telefone: '', email: '', chavePix: '', comandos: '', mapaUrl: ''
   })
 
-  // Novo Estado: Customização do Catálogo (Salvo junto com os Dados da Loja)
   const [corCatalogo, setCorCatalogo] = useState('#db2777')
   const [nomeCatalogo, setNomeCatalogo] = useState('Storefy')
+  const [lojaAberta, setLojaAberta] = useState(true)
+  const [infoEntrega, setInfoEntrega] = useState('')
+  const [msgWhatsApp, setMsgWhatsApp] = useState('Olá! Gostaria de fazer o seguinte pedido:')
+  const [redesSociais, setRedesSociais] = useState({ instagram: '', facebook: '', tiktok: '' })
+  const [banners, setBanners] = useState([])
 
   const [listaVendedores, setListaVendedores] = useState([])
   const [novoVendedor, setNovoVendedor] = useState('')
@@ -46,8 +50,14 @@ export default function Configuracoes() {
         if (docSnapLoja.exists()) {
           const dadosDB = docSnapLoja.data()
           setDadosLoja(dadosDB)
+          
           if(dadosDB.corPrincipal) setCorCatalogo(dadosDB.corPrincipal)
           if(dadosDB.nomeCatalogo) setNomeCatalogo(dadosDB.nomeCatalogo)
+          if(dadosDB.lojaAberta !== undefined) setLojaAberta(dadosDB.lojaAberta)
+          if(dadosDB.infoEntrega) setInfoEntrega(dadosDB.infoEntrega)
+          if(dadosDB.msgWhatsApp) setMsgWhatsApp(dadosDB.msgWhatsApp)
+          if(dadosDB.redesSociais) setRedesSociais(dadosDB.redesSociais)
+          if(dadosDB.banners) setBanners(dadosDB.banners)
         }
 
         const docRefSeguranca = doc(db, "configuracoes", "seguranca")
@@ -86,7 +96,6 @@ export default function Configuracoes() {
     setListaVendedores(listaVendedores.filter((_, index) => index !== indexParaRemover))
   }
 
-  // Modificado para salvar a cor e o nome do catálogo junto com os dados gerais
   const handleSalvarLoja = async (e) => {
     e.preventDefault()
     setStatus({ tipo: 'info', msg: 'A salvar dados na nuvem...' })
@@ -94,7 +103,12 @@ export default function Configuracoes() {
       const dadosParaSalvar = {
         ...dadosLoja,
         corPrincipal: corCatalogo,
-        nomeCatalogo: nomeCatalogo
+        nomeCatalogo: nomeCatalogo,
+        lojaAberta: lojaAberta,
+        infoEntrega: infoEntrega,
+        msgWhatsApp: msgWhatsApp,
+        redesSociais: redesSociais,
+        banners: banners
       }
       
       await setDoc(doc(db, "configuracoes", "loja"), dadosParaSalvar)
@@ -296,6 +310,49 @@ export default function Configuracoes() {
     }
   }
 
+  const processarBanners = async (e) => {
+    const files = Array.from(e.target.files)
+    if (banners.length + files.length > 4) {
+      mostrarAlerta('erro', 'Você pode adicionar no máximo 4 banners promocionais.')
+      return
+    }
+
+    const promessas = files.map(file => {
+      return new Promise((resolve) => {
+        const reader = new FileReader()
+        reader.onload = (event) => {
+          const img = new Image()
+          img.onload = () => {
+            const canvas = document.createElement('canvas')
+            const maxW = 900 
+            let width = img.width
+            let height = img.height
+
+            if (width > maxW) {
+              height *= maxW / width
+              width = maxW
+            }
+
+            canvas.width = width
+            canvas.height = height
+            const ctx = canvas.getContext('2d')
+            ctx.drawImage(img, 0, 0, width, height)
+            resolve(canvas.toDataURL('image/jpeg', 0.6))
+          }
+          img.src = event.target.result
+        }
+        reader.readAsDataURL(file)
+      })
+    })
+
+    const novosBanners = await Promise.all(promessas)
+    setBanners(prev => [...prev, ...novosBanners])
+  }
+
+  const removerBanner = (indexParaRemover) => {
+    setBanners(prev => prev.filter((_, index) => index !== indexParaRemover))
+  }
+
   const SidebarBtn = ({ id, icon, texto }) => (
     <button 
       onClick={() => {
@@ -367,15 +424,10 @@ export default function Configuracoes() {
                   <input type="text" value={dadosLoja.endereco} onChange={e => setDadosLoja({...dadosLoja, endereco: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="Rua, número, bairro, cidade..." />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', gridColumn: '1 / -1' }}>
-                  <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>Link do Google Maps</label>
-                  <input type="text" value={dadosLoja.mapaUrl || ''} onChange={e => setDadosLoja({...dadosLoja, mapaUrl: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="Cole a URL do mapa aqui" />
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', gridColumn: '1 / -1' }}>
                   <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>Chave Pix Principal</label>
                   <input type="text" value={dadosLoja.chavePix} onChange={e => setDadosLoja({...dadosLoja, chavePix: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="CNPJ, Celular, E-mail..." />
                 </div>
                 
-                {/* SEÇÃO VENDEDORES */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', gridColumn: '1 / -1' }}>
                   <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <User size={14}/> Equipe de Vendas (Vendedores)
@@ -414,7 +466,7 @@ export default function Configuracoes() {
                 </div>
                 
                 <button type="submit" style={{ gridColumn: '1 / -1', background: '#4f46e5', color: 'white', border: 'none', padding: '14px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '15px', marginTop: '8px', width: '100%' }}>
-                  <Save size={18} /> Salvar Configurações
+                  <Save size={18} /> Salvar Dados da Loja
                 </button>
               </form>
             </div>
@@ -423,12 +475,26 @@ export default function Configuracoes() {
           {/* ================= ABA: PERSONALIZAR CATÁLOGO ================= */}
           {abaAtiva === 'catalogo' && (
             <div>
-              <h2 style={{ fontSize: '20px', color: '#1e1b4b', fontWeight: 'bold', margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Palette size={22} color="#4f46e5" /> Identidade do Catálogo
-              </h2>
-              <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '24px', lineHeight: '1.5' }}>
-                Estas alterações refletirão imediatamente na visão do cliente quando ele abrir o seu link de vendas.
-              </p>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px', marginBottom: '24px' }}>
+                <div>
+                  <h2 style={{ fontSize: '20px', color: '#1e1b4b', fontWeight: 'bold', margin: '0 0 4px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Palette size={22} color="#4f46e5" /> Identidade do Catálogo
+                  </h2>
+                  <p style={{ color: '#64748b', fontSize: '14px', margin: 0 }}>Configure a aparência e as regras para o link dos seus clientes.</p>
+                </div>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: lojaAberta ? '#d1fae5' : '#fee2e2', padding: '10px 16px', borderRadius: '12px', border: `1px solid ${lojaAberta ? '#34d399' : '#f87171'}` }}>
+                  <span style={{ fontSize: '14px', fontWeight: 'bold', color: lojaAberta ? '#065f46' : '#991b1b' }}>
+                    {lojaAberta ? 'Loja Aberta' : 'Loja Fechada'}
+                  </span>
+                  <label style={{ position: 'relative', display: 'inline-block', width: '40px', height: '24px' }}>
+                    <input type="checkbox" checked={lojaAberta} onChange={() => setLojaAberta(!lojaAberta)} style={{ opacity: 0, width: 0, height: 0 }} />
+                    <span style={{ position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: lojaAberta ? '#10b981' : '#ef4444', transition: '.4s', borderRadius: '24px' }}>
+                      <span style={{ position: 'absolute', content: '""', height: '18px', width: '18px', left: lojaAberta ? '18px' : '3px', bottom: '3px', backgroundColor: 'white', transition: '.4s', borderRadius: '50%' }}></span>
+                    </span>
+                  </label>
+                </div>
+              </div>
 
               <form onSubmit={handleSalvarLoja} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 
@@ -444,20 +510,76 @@ export default function Configuracoes() {
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                  <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b' }}>Cor Principal dos Botões</label>
-                  <p style={{ margin: 0, fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Clique no quadrado de cor para abrir a paleta de seleção.</p>
-                  
+                  <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b' }}>Cor Principal da Marca</label>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                     <input 
                       type="color" 
                       value={corCatalogo} 
                       onChange={e => setCorCatalogo(e.target.value)} 
-                      style={{ width: '60px', height: '60px', padding: 0, border: 'none', borderRadius: '8px', cursor: 'pointer', background: 'transparent' }} 
+                      style={{ width: '50px', height: '50px', padding: 0, border: 'none', borderRadius: '8px', cursor: 'pointer', background: 'transparent' }} 
                     />
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b' }}>{corCatalogo.toUpperCase()}</span>
-                      <span style={{ fontSize: '12px', color: '#64748b' }}>Código Hexadecimal</span>
+                    <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b' }}>{corCatalogo.toUpperCase()}</span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                  <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b' }}>Banners Promocionais (Máx: 4)</label>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#64748b' }}>Estas imagens passam no formato de carrossel no topo do catálogo.</p>
+                  
+                  <div style={{ width: '100%', height: '120px', borderRadius: '8px', border: '2px dashed #cbd5e1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#ffffff', position: 'relative', cursor: 'pointer' }}>
+                    <UploadCloud size={30} color="#94a3b8" style={{ marginBottom: '8px' }} />
+                    <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '600' }}>Toque para adicionar fotos</span>
+                    <input type="file" accept="image/*" multiple onChange={processarBanners} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }} />
+                  </div>
+                  
+                  {banners.length > 0 && (
+                    <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingTop: '10px' }}>
+                      {banners.map((src, index) => (
+                        <div key={index} style={{ position: 'relative', width: '120px', height: '60px', flexShrink: 0, borderRadius: '8px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+                          <img src={src} alt="Banner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          <button type="button" onClick={() => removerBanner(index)} style={{ position: 'absolute', top: '2px', right: '2px', background: 'rgba(0,0,0,0.6)', color: 'white', border: 'none', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}><X size={12} /></button>
+                        </div>
+                      ))}
                     </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                  <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b' }}>Informações de Entrega e Retirada</label>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#64748b' }}>Explique bairros de entrega, taxas, horários e locais de retirada física.</p>
+                  <textarea 
+                    value={infoEntrega} 
+                    onChange={e => setInfoEntrega(e.target.value)} 
+                    style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', minHeight: '100px', resize: 'vertical', fontFamily: 'inherit' }} 
+                    placeholder="Ex: Entregas para toda a cidade com taxa de R$ 5,00. Retiradas na loja das 08h às 18h." 
+                  />
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                  <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b' }}>Mensagem Padrão do WhatsApp</label>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#64748b' }}>Esta é a frase que o cliente envia junto com a lista de itens.</p>
+                  <input 
+                    type="text" 
+                    value={msgWhatsApp} 
+                    onChange={e => setMsgWhatsApp(e.target.value)} 
+                    style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} 
+                    placeholder="Olá! Gostaria de fazer o seguinte pedido:" 
+                  />
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                  <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>Links de Redes Sociais</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Share2 size={20} color="#e1306c" />
+                    <input type="text" value={redesSociais.instagram} onChange={e => setRedesSociais({...redesSociais, instagram: e.target.value})} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px' }} placeholder="Link da primeira rede social (ex: Instagram)" />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Globe size={20} color="#2563eb" />
+                    <input type="text" value={redesSociais.facebook} onChange={e => setRedesSociais({...redesSociais, facebook: e.target.value})} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px' }} placeholder="Link da segunda rede social (ex: Facebook)" />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <LinkIcon size={20} color="#111827" />
+                    <input type="text" value={redesSociais.tiktok} onChange={e => setRedesSociais({...redesSociais, tiktok: e.target.value})} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px' }} placeholder="Link da terceira rede social (ex: TikTok)" />
                   </div>
                 </div>
 
@@ -504,7 +626,6 @@ export default function Configuracoes() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                         <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#1e1b4b' }}><Mail size={14}/> E-mail para Recuperação (Obrigatório)</label>
                         <input type="email" required value={seguranca.emailRecuperacao || ''} onChange={e => setSeguranca({...seguranca, emailRecuperacao: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="seuemail@gmail.com" />
-                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>Caso perca a senha Master, as instruções serão enviadas para cá futuramente.</span>
                       </div>
                     </div>
 
@@ -535,7 +656,6 @@ export default function Configuracoes() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                         <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#b91c1c', display: 'flex', alignItems: 'center', gap: '6px' }}><Lock size={14}/> Senha MASTER do Sistema</label>
                         <input type="text" value={seguranca.senhaMaster || ''} onChange={e => setSeguranca({...seguranca, senhaMaster: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #fca5a5', outline: 'none', fontSize: '15px', color: '#b91c1c', fontWeight: 'bold' }} placeholder="Senha para formatação geral..." />
-                        <span style={{ fontSize: '11px', color: '#ef4444', fontWeight: '600' }}>Esta senha permite apagar TODO o banco de dados e desbloquear o cofre. Guarde-a com segurança.</span>
                       </div>
                     </div>
 
@@ -551,7 +671,6 @@ export default function Configuracoes() {
           {/* ================= ABA: BACKUPS E MANUTENÇÃO ================= */}
           {abaAtiva === 'manutencao' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-              
               <div>
                 <h2 style={{ fontSize: '20px', color: '#1e1b4b', fontWeight: 'bold', margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '8px' }}><ShieldCheck size={22} color="#4f46e5" /> Cópias de Segurança</h2>
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
@@ -561,10 +680,8 @@ export default function Configuracoes() {
                     <button onClick={exportarBackup} style={{ background: '#f8fafc', color: '#1e1b4b', border: '1px solid #cbd5e1', padding: '10px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '13px', marginTop: 'auto' }}><Download size={16} /> Baixar JSON</button>
                   </div>
                   <div style={{ border: '1px dashed #cbd5e1', padding: '20px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <h3 style={{ fontSize: '15px', color: '#1e1b4b', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
-                      Restaurar Sistema <Lock size={14} color="#ef4444"/>
-                    </h3>
-                    <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>Suba um arquivo JSON exportado anteriormente para anexar os registos diretamente no banco de dados remoto.</p>
+                    <h3 style={{ fontSize: '15px', color: '#1e1b4b', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>Restaurar Sistema <Lock size={14} color="#ef4444"/></h3>
+                    <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>Suba um arquivo JSON exportado anteriormente.</p>
                     <div style={{ position: 'relative', marginTop: 'auto' }}>
                       <input type="file" accept=".json" onChange={tentarImportarBackup} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer', zIndex: 10 }} />
                       <button type="button" style={{ background: '#10b981', color: 'white', border: 'none', padding: '12px', width: '100%', borderRadius: '8px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '14px' }}><UploadCloud size={16} /> Subir Arquivo</button>
@@ -575,20 +692,12 @@ export default function Configuracoes() {
 
               <div>
                 <h2 style={{ fontSize: '20px', color: '#ef4444', fontWeight: 'bold', margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '8px' }}><AlertTriangle size={22} color="#ef4444" /> Formatação do Sistema</h2>
-                <p style={{ color: '#ef4444', fontSize: '13px', fontWeight: '600', marginBottom: '16px', margin: 0, paddingBottom: '16px' }}>ATENÇÃO: Estas ações apagam os dados de forma permanente do servidor Google. É exigida senha para execução.</p>
-                
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <button onClick={() => tentarResetSeletivo('historico', 'Histórico de Vendas', 'historico')} style={{ background: 'transparent', color: '#ef4444', border: '1px solid #fee2e2', padding: '12px', borderRadius: '10px', fontWeight: '600', cursor: 'pointer', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Trash2 size={16}/> Limpar Histórico de Vendas</div> <Lock size={14}/>
                   </button>
-                  <button onClick={() => tentarResetSeletivo('produtos', 'Catálogo de Produtos', 'produtos')} style={{ background: 'transparent', color: '#ef4444', border: '1px solid #fee2e2', padding: '12px', borderRadius: '10px', fontWeight: '600', cursor: 'pointer', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Trash2 size={16}/> Esvaziar Catálogo de Produtos</div> <Lock size={14}/>
-                  </button>
-                  <button onClick={() => tentarResetSeletivo('clientes', 'Fichas dos Clientes', 'clientes')} style={{ background: 'transparent', color: '#ef4444', border: '1px solid #fee2e2', padding: '12px', borderRadius: '10px', fontWeight: '600', cursor: 'pointer', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Trash2 size={16}/> Limpar Devedores</div> <Lock size={14}/>
-                  </button>
                   <button onClick={() => tentarResetSeletivo('tudo', 'SISTEMA COMPLETO', 'master')} style={{ background: '#ef4444', color: 'white', border: 'none', padding: '16px', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginTop: '8px' }}>
-                    <AlertTriangle size={18}/> Formatar Sistema Inteiro (Reset de Fábrica)
+                    <AlertTriangle size={18}/> Formatar Sistema Inteiro
                   </button>
                 </div>
               </div>
@@ -598,22 +707,18 @@ export default function Configuracoes() {
         </div>
       </div>
 
-      {/* ================= MODAL DE AUTENTICAÇÃO (SEGURANÇA) ================= */}
       {authModal.isOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(15, 23, 42, 0.8)', backdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999, padding: '16px', boxSizing: 'border-box' }}>
           <div style={{ background: '#ffffff', width: '100%', maxWidth: '400px', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)', boxSizing: 'border-box' }}>
-            
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ margin: 0, color: '#ef4444', fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold' }}>
                 <Lock size={20} /> Autorização Necessária
               </h3>
               <button onClick={fecharModal} style={{ background: 'transparent', border: 'none', color: '#64748b', cursor: 'pointer', padding: 0 }}><X size={24}/></button>
             </div>
-            
             <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '24px', lineHeight: '1.4', margin: 0, paddingBottom: '16px' }}>
               Você está tentando <strong>{authModal.titulo}</strong>. Insira a senha definida nas configurações para confirmar.
             </p>
-
             <form onSubmit={confirmarAcesso} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#1e1b4b' }}>Senha de Acesso</label>
@@ -626,21 +731,14 @@ export default function Configuracoes() {
                   required
                 />
               </div>
-
               <div style={{ display: 'flex', gap: '12px', marginTop: '12px', flexDirection: isMobile ? 'column' : 'row' }}>
-                <button type="button" onClick={fecharModal} style={{ flex: 1, background: 'transparent', border: '1px solid #cbd5e1', color: '#1e1b4b', padding: '14px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px' }}>
-                  Cancelar
-                </button>
-                <button type="submit" style={{ flex: 1, background: '#ef4444', border: 'none', color: '#ffffff', padding: '14px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px' }}>
-                  Confirmar Ação
-                </button>
+                <button type="button" onClick={fecharModal} style={{ flex: 1, background: 'transparent', border: '1px solid #cbd5e1', color: '#1e1b4b', padding: '14px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px' }}>Cancelar</button>
+                <button type="submit" style={{ flex: 1, background: '#ef4444', border: 'none', color: '#ffffff', padding: '14px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px' }}>Confirmar Ação</button>
               </div>
             </form>
-
           </div>
         </div>
       )}
-
     </div>
   )
 }
