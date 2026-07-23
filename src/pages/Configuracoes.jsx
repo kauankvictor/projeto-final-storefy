@@ -16,6 +16,7 @@ export default function Configuracoes() {
   const [lojaAberta, setLojaAberta] = useState(true)
   const [infoEntrega, setInfoEntrega] = useState('')
   const [msgWhatsApp, setMsgWhatsApp] = useState('Olá! Gostaria de fazer o seguinte pedido:')
+  const [whatsappPedidos, setWhatsappPedidos] = useState('')
   const [redesSociais, setRedesSociais] = useState({ instagram: '', facebook: '', tiktok: '' })
   const [banners, setBanners] = useState([])
 
@@ -56,6 +57,7 @@ export default function Configuracoes() {
           if(dadosDB.lojaAberta !== undefined) setLojaAberta(dadosDB.lojaAberta)
           if(dadosDB.infoEntrega) setInfoEntrega(dadosDB.infoEntrega)
           if(dadosDB.msgWhatsApp) setMsgWhatsApp(dadosDB.msgWhatsApp)
+          if(dadosDB.whatsappPedidos) setWhatsappPedidos(dadosDB.whatsappPedidos)
           if(dadosDB.redesSociais) setRedesSociais(dadosDB.redesSociais)
           if(dadosDB.banners) setBanners(dadosDB.banners)
         }
@@ -107,6 +109,7 @@ export default function Configuracoes() {
         lojaAberta: lojaAberta,
         infoEntrega: infoEntrega,
         msgWhatsApp: msgWhatsApp,
+        whatsappPedidos: whatsappPedidos,
         redesSociais: redesSociais,
         banners: banners
       }
@@ -520,6 +523,18 @@ export default function Configuracoes() {
                     />
                     <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b' }}>{corCatalogo.toUpperCase()}</span>
                   </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                  <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b' }}>WhatsApp para Receber Pedidos</label>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#64748b' }}>Número que receberá a mensagem com o resumo do carrinho.</p>
+                  <input 
+                    type="text" 
+                    value={whatsappPedidos} 
+                    onChange={e => setWhatsappPedidos(e.target.value)} 
+                    style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} 
+                    placeholder="(00) 00000-0000" 
+                  />
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
