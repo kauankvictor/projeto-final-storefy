@@ -59,16 +59,36 @@ export default function Estoque() {
     buscarProdutosFirebase()
   }, [])
 
-  const categoriasUnicas = ['Todas', ...new Set(produtos.map(p => p.categoria))]
+  // Extrair categorias corretamente (suportando múltiplas)
+  let catSet = new Set()
+  produtos.forEach(p => {
+    if (p.categorias && Array.isArray(p.categorias)) {
+      p.categorias.forEach(c => catSet.add(c))
+    } else if (p.categoria) {
+      catSet.add(p.categoria)
+    }
+  })
+  const categoriasUnicas = ['Todas', 'Promoções', ...Array.from(catSet).sort((a, b) => a.localeCompare(b))]
 
   const produtosFiltrados = produtos.filter(produto => {
     const termoBusca = busca.toLowerCase()
+    const strCategorias = (produto.categorias || []).join(' ').toLowerCase()
+    const catAntiga = (produto.categoria || '').toLowerCase()
+
     const matchBusca = 
       produto.nome.toLowerCase().includes(termoBusca) || 
-      produto.categoria.toLowerCase().includes(termoBusca) ||
+      strCategorias.includes(termoBusca) ||
+      catAntiga.includes(termoBusca) ||
       (produto.codigoBarras && produto.codigoBarras.includes(termoBusca))
       
-    const matchCategoria = categoriaFiltro === 'Todas' || produto.categoria === categoriaFiltro
+    let matchCategoria = false
+    if (categoriaFiltro === 'Todas') {
+      matchCategoria = true
+    } else if (categoriaFiltro === 'Promoções') {
+      matchCategoria = Number(produto.precoAntigo) > Number(produto.preco)
+    } else {
+      matchCategoria = (produto.categorias && produto.categorias.includes(categoriaFiltro)) || produto.categoria === categoriaFiltro
+    }
 
     return matchBusca && matchCategoria
   })
@@ -124,7 +144,7 @@ export default function Estoque() {
                 produtosFiltrados.map(p => `
                 <tr>
                   <td style="font-weight: 600; color: #1e1b4b;">${p.nome}</td>
-                  <td>${p.categoria}</td>
+                  <td>${p.categorias ? p.categorias.join(', ') : p.categoria}</td>
                   <td>${p.codigoBarras || 'Sem código'}</td>
                   <td style="color: ${p.quantidade > 0 ? '#059669' : '#ef4444'}; font-weight: bold;">
                     ${p.quantidade > 0 ? p.quantidade + ' un' : 'Esgotado'}
@@ -158,7 +178,7 @@ export default function Estoque() {
     return null
   }
 
-  const formatoMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor)
+  const formatoMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(valor) || 0)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -190,7 +210,9 @@ export default function Estoque() {
 
             <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
-                <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase' }}>{produtoSelecionado.categoria}</span>
+                <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase' }}>
+                  {produtoSelecionado.categorias ? produtoSelecionado.categorias.join(' • ') : produtoSelecionado.categoria}
+                </span>
                 <h2 style={{ fontSize: '20px', color: '#1e1b4b', margin: '4px 0 0 0', fontWeight: 'bold' }}>{produtoSelecionado.nome}</h2>
                 <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0 0', fontFamily: 'monospace' }}>Código: {produtoSelecionado.codigoBarras || 'Não cadastrado'}</p>
               </div>
@@ -203,6 +225,14 @@ export default function Estoque() {
                     </span>
                   )}
                   <span style={{ fontSize: '24px', color: '#4f46e5', fontWeight: '900' }}>{formatoMoeda(produtoSelecionado.preco)}</span>
+                  
+                  {/* PREÇO A PRAZO ADICIONADO AQUI */}
+                  {produtoSelecionado.precoPrazo && Number(produtoSelecionado.precoPrazo) > 0 && (
+                     <span style={{ fontSize: '13px', color: '#64748b', fontWeight: 'bold', marginTop: '2px' }}>
+                       A prazo: <span style={{ color: '#1e1b4b' }}>{formatoMoeda(produtoSelecionado.precoPrazo)}</span>
+                     </span>
+                  )}
+
                 </div>
                 <span style={{ background: produtoSelecionado.quantidade > 0 ? '#d1fae5' : '#fee2e2', color: produtoSelecionado.quantidade > 0 ? '#059669' : '#dc2626', padding: '6px 12px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold' }}>
                   {produtoSelecionado.quantidade > 0 ? `Estoque: ${produtoSelecionado.quantidade}` : 'Esgotado'}
@@ -306,8 +336,8 @@ export default function Estoque() {
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
-                  <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    {produto.categoria}
+                  <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {produto.categorias ? produto.categorias.join(' • ') : produto.categoria}
                   </span>
                   
                   <h3 style={{ fontSize: isMobile ? '13px' : '16px', color: '#1e1b4b', fontWeight: 'bold', margin: '4px 0 12px 0', lineHeight: '1.3' }}>

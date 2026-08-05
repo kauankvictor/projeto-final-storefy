@@ -24,7 +24,6 @@ export default function Venda() {
   const [criandoClienteRapido, setCriandoClienteRapido] = useState(false)
   const [novoClienteNome, setNovoClienteNome] = useState('')
 
-  // Modal de categorias e lista de vendedores reais
   const [modalCategoriasAberta, setModalCategoriasAberta] = useState(false)
   const [vendedorNome, setVendedorNome] = useState('')
   const [listaVendedores, setListaVendedores] = useState([])
@@ -41,7 +40,6 @@ export default function Venda() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  // Efeito para travar a rolagem da tela principal quando o modal de categorias abrir
   useEffect(() => {
     if (modalCategoriasAberta) {
       document.body.style.overflow = 'hidden'
@@ -62,13 +60,12 @@ export default function Venda() {
         const listaC = queryClientes.docs.map(d => ({ id: d.id, ...d.data() }))
         setListaClientes(listaC)
 
-        // Busca os vendedores exclusivamente das configurações
         const docRefVendedores = doc(db, "configuracoes", "vendedores")
         const docSnapVendedores = await getDoc(docRefVendedores)
         if (docSnapVendedores.exists() && docSnapVendedores.data().lista) {
           setListaVendedores(docSnapVendedores.data().lista)
         } else {
-          setListaVendedores([]) // Removemos os nomes falsos, se não houver nenhum, fica vazio.
+          setListaVendedores([])
         }
       } catch (error) {
         console.error("Erro ao carregar dados na frente de caixa:", error)
@@ -78,19 +75,47 @@ export default function Venda() {
     carregarDadosNuvem()
   }, [sucesso])
 
-  const categoriasUnicas = ['Todas', ...new Set(produtos.map(p => p.categoria))]
+  // Lógica inteligente de Preço Dinâmico (À vista x A prazo)
+  const getPrecoItem = (item, formaPagamentoAtual) => {
+    if (formaPagamentoAtual === 'Cartão de Crédito' || formaPagamentoAtual === 'Anotar (Fiado)') {
+      return item.precoPrazo ? Number(item.precoPrazo) : Number(item.preco)
+    }
+    return Number(item.preco)
+  }
+
+  let catSet = new Set()
+  produtos.forEach(p => {
+    if (p.categorias && Array.isArray(p.categorias)) {
+      p.categorias.forEach(c => catSet.add(c))
+    } else if (p.categoria) {
+      catSet.add(p.categoria)
+    }
+  })
+  const categoriasUnicas = ['Todas', 'Promoções', ...Array.from(catSet).sort((a, b) => a.localeCompare(b))]
   
-  // Lógica para mostrar apenas 3 categorias no mobile + o botão "Todas as Categorias"
   const categoriasExibidas = isMobile ? categoriasUnicas.slice(0, 3) : categoriasUnicas
   const mostrarBotaoTodasCategorias = isMobile && categoriasUnicas.length > 3
 
   const produtosFiltrados = produtos.filter(produto => {
     const termoBusca = busca.toLowerCase()
+    const strCategorias = (produto.categorias || []).join(' ').toLowerCase()
+    const catAntiga = (produto.categoria || '').toLowerCase()
+
     const matchBusca = 
       produto.nome.toLowerCase().includes(termoBusca) || 
-      produto.categoria.toLowerCase().includes(termoBusca) ||
+      strCategorias.includes(termoBusca) ||
+      catAntiga.includes(termoBusca) ||
       (produto.codigoBarras && produto.codigoBarras.includes(termoBusca))
-    const matchCategoria = categoriaFiltro === 'Todas' || produto.categoria === categoriaFiltro
+      
+    let matchCategoria = false
+    if (categoriaFiltro === 'Todas') {
+      matchCategoria = true
+    } else if (categoriaFiltro === 'Promoções') {
+      matchCategoria = Number(produto.precoAntigo) > Number(produto.preco)
+    } else {
+      matchCategoria = (produto.categorias && produto.categorias.includes(categoriaFiltro)) || produto.categoria === categoriaFiltro
+    }
+
     return matchBusca && matchCategoria
   })
 
@@ -151,8 +176,9 @@ export default function Venda() {
     }
   }
 
+  // Usando o getPrecoItem para calcular o subtotal de acordo com a forma de pagamento selecionada
   const calcularSubtotal = () => {
-    return carrinho.reduce((total, item) => total + (item.preco * item.quantidadeComprada), 0)
+    return carrinho.reduce((total, item) => total + (getPrecoItem(item, formaPagamento) * item.quantidadeComprada), 0)
   }
 
   const calcularDescontoReal = () => {
@@ -233,9 +259,9 @@ export default function Venda() {
         itens: carrinho.map(item => ({
           id: item.id,
           nome: item.nome,
-          preco: item.preco,
+          preco: getPrecoItem(item, formaPagamento), // Salvando o preço aplicado real
           quantidadeComprada: item.quantidadeComprada,
-          categoria: item.categoria
+          categoria: item.categorias ? item.categorias.join(', ') : (item.categoria || 'Sem categoria')
         })),
         subtotal: calcularSubtotal(),
         desconto: calcularDescontoReal(),
@@ -267,7 +293,7 @@ export default function Venda() {
     }
   }
 
-  const formatoMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor)
+  const formatoMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(valor) || 0)
 
   const rolarParaCarrinho = () => {
     document.getElementById('carrinho-mobile').scrollIntoView({ behavior: 'smooth' })
@@ -369,7 +395,9 @@ export default function Venda() {
 
             <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
-                <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase' }}>{produtoSelecionado.categoria}</span>
+                <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase' }}>
+                  {produtoSelecionado.categorias ? produtoSelecionado.categorias.join(' • ') : produtoSelecionado.categoria}
+                </span>
                 <h2 style={{ fontSize: '20px', color: '#1e1b4b', margin: '4px 0 0 0', fontWeight: 'bold' }}>{produtoSelecionado.nome}</h2>
                 <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0 0', fontFamily: 'monospace' }}>Código: {produtoSelecionado.codigoBarras || 'Não cadastrado'}</p>
               </div>
@@ -382,6 +410,14 @@ export default function Venda() {
                     </span>
                   )}
                   <span style={{ fontSize: '24px', color: '#4f46e5', fontWeight: '900' }}>{formatoMoeda(produtoSelecionado.preco)}</span>
+                  
+                  {/* PREÇO A PRAZO ADICIONADO AQUI */}
+                  {produtoSelecionado.precoPrazo && Number(produtoSelecionado.precoPrazo) > 0 && (
+                     <span style={{ fontSize: '13px', color: '#64748b', fontWeight: 'bold', marginTop: '2px' }}>
+                       A prazo: <span style={{ color: '#1e1b4b' }}>{formatoMoeda(produtoSelecionado.precoPrazo)}</span>
+                     </span>
+                  )}
+
                 </div>
                 <span style={{ background: produtoSelecionado.quantidade > 0 ? '#d1fae5' : '#fee2e2', color: produtoSelecionado.quantidade > 0 ? '#059669' : '#dc2626', padding: '6px 12px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold' }}>
                   {produtoSelecionado.quantidade > 0 ? `Estoque: ${produtoSelecionado.quantidade}` : 'Esgotado'}
@@ -422,8 +458,8 @@ export default function Venda() {
           </div>
         </div>
 
-        {/* BARRA DE CATEGORIAS EM DESTAQUE LOGO ABAIXO */}
-        <div style={{ display: 'flex', overflowX: 'auto', gap: '8px', paddingBottom: '4px', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
+        {/* BARRA DE CATEGORIAS COM CORREÇÃO VISUAL PARA NÃO SER COBERTA */}
+        <div style={{ display: 'flex', overflowX: 'auto', gap: '10px', paddingBottom: '16px', marginBottom: '16px', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch', position: 'relative', zIndex: 10, flexShrink: 0 }}>
           {categoriasExibidas.map(cat => (
             <button 
               key={cat} 
@@ -439,7 +475,8 @@ export default function Venda() {
                 flexShrink: 0,
                 fontSize: '14px',
                 whiteSpace: 'nowrap',
-                transition: '0.2s'
+                transition: '0.2s',
+                boxShadow: categoriaFiltro === cat ? '0 4px 6px rgba(79, 70, 229, 0.2)' : 'none'
               }}
             >
               {cat}
@@ -490,7 +527,9 @@ export default function Venda() {
                   )}
                   {fotoPrincipal ? <img src={fotoPrincipal} alt={produto.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <ShoppingCart size={32} color="#cbd5e1" />}
                 </div>
-                <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase' }}>{produto.categoria}</span>
+                <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {produto.categorias ? produto.categorias.join(' • ') : produto.categoria}
+                </span>
                 <h3 style={{ fontSize: isMobile ? '13px' : '14px', color: '#1e1b4b', fontWeight: 'bold', margin: '4px 0', lineHeight: '1.2' }}>{produto.nome}</h3>
                 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: 'auto', paddingTop: '8px', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '4px' : '0' }}>
@@ -540,8 +579,13 @@ export default function Venda() {
             {carrinho.map(item => (
               <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9', paddingBottom: '12px', flexWrap: isMobile ? 'wrap' : 'nowrap', gap: '12px' }}>
                 <div style={{ flex: 1, minWidth: isMobile ? '100%' : 0 }}>
-                  <p style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.nome}</p>
-                  <p style={{ fontSize: '13px', color: '#4f46e5', fontWeight: '600', marginTop: '2px' }}>{formatoMoeda(item.preco)}</p>
+                  <p style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: '0' }}>{item.nome}</p>
+                  
+                  {/* PREÇO MOSTRADO AQUI DEPENDE DA FORMA DE PAGAMENTO */}
+                  <p style={{ fontSize: '13px', color: '#4f46e5', fontWeight: '600', margin: '4px 0 0 0' }}>
+                    {formatoMoeda(getPrecoItem(item, formaPagamento))}
+                  </p>
+
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f8fafc', padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', width: isMobile ? '100%' : 'auto', justifyContent: isMobile ? 'space-between' : 'flex-start' }}>
                   <button onClick={() => removerDoCarrinho(item.id)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b' }}><Minus size={16} /></button>
@@ -558,11 +602,11 @@ export default function Venda() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Forma de Pagamento</label>
               <select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', cursor: 'pointer', background: '#f8fafc' }}>
-                <option value="Pix">Pix</option>
-                <option value="Cartão de Crédito">Cartão de Crédito</option>
-                <option value="Cartão de Débito">Cartão de Débito</option>
-                <option value="Dinheiro">Dinheiro</option>
-                <option value="Anotar (Fiado)">Anotar na Conta (Fiado)</option>
+                <option value="Pix">Pix (Preço à vista)</option>
+                <option value="Dinheiro">Dinheiro (Preço à vista)</option>
+                <option value="Cartão de Débito">Cartão de Débito (Preço à vista)</option>
+                <option value="Cartão de Crédito">Cartão de Crédito (Preço a Prazo)</option>
+                <option value="Anotar (Fiado)">Anotar na Conta / Fiado (Preço a Prazo)</option>
               </select>
             </div>
 
@@ -636,7 +680,7 @@ export default function Venda() {
                 {carrinho.map(item => (
                   <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: '#1e1b4b' }}>
                     <span>{item.quantidadeComprada}x {item.nome}</span>
-                    <span style={{ fontWeight: '600' }}>{formatoMoeda(item.preco * item.quantidadeComprada)}</span>
+                    <span style={{ fontWeight: '600' }}>{formatoMoeda(getPrecoItem(item, formaPagamento) * item.quantidadeComprada)}</span>
                   </div>
                 ))}
               </div>

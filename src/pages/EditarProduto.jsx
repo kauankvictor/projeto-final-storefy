@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Save, CheckCircle, AlertCircle, UploadCloud, Trash2, X, LayoutGrid } from 'lucide-react'
+import { ArrowLeft, Save, CheckCircle, AlertCircle, UploadCloud, Trash2, X, LayoutGrid, Plus, Star } from 'lucide-react'
 
 import { doc, getDoc, updateDoc, deleteDoc, collection, getDocs, addDoc } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
@@ -11,9 +11,13 @@ export default function EditarProduto() {
   
   const [nome, setNome] = useState('')
   const [codigoBarras, setCodigoBarras] = useState('')
-  const [categoria, setCategoria] = useState('')
+  
+  const [inputCategoria, setInputCategoria] = useState('')
+  const [categoriasSelecionadas, setCategoriasSelecionadas] = useState([])
+  
   const [descricao, setDescricao] = useState('')
   const [preco, setPreco] = useState('')
+  const [precoPrazo, setPrecoPrazo] = useState('')
   const [precoAntigo, setPrecoAntigo] = useState('')
   const [quantidade, setQuantidade] = useState('')
   
@@ -22,10 +26,9 @@ export default function EditarProduto() {
   const [nomeDestaque, setNomeDestaque] = useState('')
   const [imagensPreviews, setImagensPreviews] = useState([])
   
-  const [categorias, setCategorias] = useState([])
-  const [eventos, setEventos] = useState([])
+  const [categoriasLista, setCategoriasLista] = useState([])
+  const [eventosLista, setEventosLista] = useState([])
   
-  // NOVO ESTADO: Guarda os dados originais para comparar o que mudou
   const [produtoOriginal, setProdutoOriginal] = useState(null)
 
   const [erro, setErro] = useState('')
@@ -34,6 +37,7 @@ export default function EditarProduto() {
   const [processando, setProcessando] = useState(false)
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
   const [modalCategoriasAberta, setModalCategoriasAberta] = useState(false)
+  const [modalEventosAberta, setModalEventosAberta] = useState(false)
 
   const formatoMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(valor) || 0)
 
@@ -44,11 +48,24 @@ export default function EditarProduto() {
     const carregarListasEProduto = async () => {
       try {
         const querySnapshot = await getDocs(collection(db, "produtos"))
-        const categoriasDoBanco = querySnapshot.docs.map(doc => doc.data().categoria).filter(Boolean)
-        setCategorias([...new Set(categoriasDoBanco)].sort((a, b) => a.localeCompare(b)))
+        
+        let catSet = new Set()
+        let evSet = new Set()
 
-        const eventosDoBanco = querySnapshot.docs.map(doc => doc.data().nomeDestaque).filter(Boolean)
-        setEventos([...new Set(eventosDoBanco)])
+        querySnapshot.docs.forEach(doc => {
+          const data = doc.data()
+          if (data.categorias && Array.isArray(data.categorias)) {
+            data.categorias.forEach(c => catSet.add(c))
+          } else if (data.categoria) {
+            catSet.add(data.categoria)
+          }
+          if (data.nomeDestaque) {
+            evSet.add(data.nomeDestaque)
+          }
+        })
+
+        setCategoriasLista([...catSet].sort((a, b) => a.localeCompare(b)))
+        setEventosLista([...evSet].sort((a, b) => a.localeCompare(b)))
 
         const docRef = doc(db, "produtos", id)
         const docSnap = await getDoc(docRef)
@@ -56,14 +73,22 @@ export default function EditarProduto() {
         if (docSnap.exists()) {
           const dados = docSnap.data()
           
-          // Salva uma cópia exata do que veio do banco para o histórico
           setProdutoOriginal(dados)
 
           setNome(dados.nome || '')
           setCodigoBarras(dados.codigoBarras || '')
-          setCategoria(dados.categoria || '')
+          
+          if (dados.categorias && Array.isArray(dados.categorias)) {
+            setCategoriasSelecionadas(dados.categorias)
+          } else if (dados.categoria) {
+            setCategoriasSelecionadas([dados.categoria])
+          } else {
+            setCategoriasSelecionadas([])
+          }
+
           setDescricao(dados.descricao || '')
           setPreco(dados.preco ? dados.preco.toString() : '')
+          setPrecoPrazo(dados.precoPrazo ? dados.precoPrazo.toString() : '')
           setPrecoAntigo(dados.precoAntigo ? dados.precoAntigo.toString() : '')
           setQuantidade(dados.quantidade ? dados.quantidade.toString() : '0')
           
@@ -110,6 +135,26 @@ export default function EditarProduto() {
     setImagensPreviews(prev => prev.filter((_, index) => index !== indexParaRemover))
   }
 
+  const adicionarCategoria = (e) => {
+    if (e) e.preventDefault()
+    if (inputCategoria.trim() !== '' && !categoriasSelecionadas.includes(inputCategoria.trim())) {
+      setCategoriasSelecionadas([...categoriasSelecionadas, inputCategoria.trim()])
+    }
+    setInputCategoria('')
+  }
+
+  const removerCategoriaSelecionada = (catParaRemover) => {
+    setCategoriasSelecionadas(categoriasSelecionadas.filter(cat => cat !== catParaRemover))
+  }
+
+  const toggleCategoriaModal = (cat) => {
+    if (categoriasSelecionadas.includes(cat)) {
+      removerCategoriaSelecionada(cat)
+    } else {
+      setCategoriasSelecionadas([...categoriasSelecionadas, cat])
+    }
+  }
+
   const processarECompressarImagens = async () => {
     const promessasDeCompressao = imagensPreviews.map(imagemSrc => {
       return new Promise((resolve) => {
@@ -152,12 +197,12 @@ export default function EditarProduto() {
   const handleSalvar = async (e) => {
     e.preventDefault()
     if (nome.trim() === '' || preco.trim() === '') {
-      setErro('Os campos Nome e Preço são obrigatórios!')
+      setErro('Os campos Nome e Preço à Vista são obrigatórios!')
       return
     }
 
     if (destaque && nomeDestaque.trim() === '') {
-      setErro('Digite um nome para a vitrine ou desmarque a opção de destaque.')
+      setErro('Digite ou selecione um nome para a vitrine ou desmarque a opção de destaque.')
       return
     }
 
@@ -167,15 +212,18 @@ export default function EditarProduto() {
 
       const novoPrecoNum = parseFloat(preco)
       const novaQtdNum = parseInt(quantidade, 10) || 0
+      const categoriasAtuaisStr = categoriasSelecionadas.join(', ')
 
-      // LÓGICA DO HISTÓRICO DETALHADO
       let mudancas = []
       if (produtoOriginal) {
         if (nome !== produtoOriginal.nome) {
           mudancas.push(`Nome alterado de "${produtoOriginal.nome}" para "${nome}"`)
         }
         if (novoPrecoNum !== parseFloat(produtoOriginal.preco || 0)) {
-          mudancas.push(`Preço de ${formatoMoeda(produtoOriginal.preco)} para ${formatoMoeda(novoPrecoNum)}`)
+          mudancas.push(`Preço à vista de ${formatoMoeda(produtoOriginal.preco)} para ${formatoMoeda(novoPrecoNum)}`)
+        }
+        if (parseFloat(precoPrazo || 0) !== parseFloat(produtoOriginal.precoPrazo || 0)) {
+          mudancas.push(`Preço a prazo modificado`)
         }
         if (novaQtdNum !== parseInt(produtoOriginal.quantidade || 0, 10)) {
           mudancas.push(`Quantidade de ${produtoOriginal.quantidade || 0} para ${novaQtdNum}`)
@@ -183,9 +231,12 @@ export default function EditarProduto() {
         if (codigoBarras !== (produtoOriginal.codigoBarras || '')) {
           mudancas.push(`Código de barras modificado`)
         }
-        if ((categoria || 'Sem Categoria') !== (produtoOriginal.categoria || 'Sem Categoria')) {
-          mudancas.push(`Categoria modificada`)
+        
+        const categoriasAntigasStr = Array.isArray(produtoOriginal.categorias) ? produtoOriginal.categorias.join(', ') : (produtoOriginal.categoria || '')
+        if (categoriasAtuaisStr !== categoriasAntigasStr) {
+          mudancas.push(`Categorias modificadas`)
         }
+        
         if (descricao.trim() !== (produtoOriginal.descricao || '').trim()) {
           mudancas.push(`Descrição modificada`)
         }
@@ -195,12 +246,16 @@ export default function EditarProduto() {
         ? `Modificações: ${mudancas.join(', ')}.` 
         : `Atualização de imagens ou configurações visuais do catálogo.`
 
+      const categoriaFallback = categoriasSelecionadas.length > 0 ? categoriasSelecionadas[0] : 'Sem Categoria'
+
       const dadosAtualizados = {
         nome,
         codigoBarras,
-        categoria: categoria || 'Sem Categoria',
+        categorias: categoriasSelecionadas.length > 0 ? categoriasSelecionadas : ['Sem Categoria'],
+        categoria: categoriaFallback,
         descricao: descricao.trim(),
         preco: novoPrecoNum,
+        precoPrazo: precoPrazo ? parseFloat(precoPrazo) : null,
         precoAntigo: precoAntigo ? parseFloat(precoAntigo) : null,
         quantidade: novaQtdNum,
         visivelCatalogo: visivelCatalogo,
@@ -212,7 +267,6 @@ export default function EditarProduto() {
 
       await updateDoc(doc(db, "produtos", id), dadosAtualizados)
 
-      // Grava no histórico usando o texto detalhado gerado
       const logEstoqueEditado = {
         idRegistro: Date.now(),
         tipo: 'ESTOQUE',
@@ -255,21 +309,68 @@ export default function EditarProduto() {
           <div style={{ background: 'white', width: '100%', maxWidth: '600px', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '24px', display: 'flex', flexDirection: 'column', maxHeight: '70vh', boxShadow: '0 -10px 25px rgba(0,0,0,0.1)' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '900', color: '#1f2937', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <LayoutGrid size={24} color="#4f46e5" /> Selecionar Categoria
+                <LayoutGrid size={24} color="#4f46e5" /> Múltiplas Categorias
               </h2>
               <button onClick={() => setModalCategoriasAberta(false)} style={{ background: '#f3f4f6', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><X size={20} /></button>
             </div>
             
             <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingRight: '4px' }}>
-              {categorias.length === 0 ? (
-                <p style={{ textAlign: 'center', color: '#6b7280' }}>Nenhuma categoria cadastrada ainda.</p>
+              {categoriasLista.length === 0 ? (
+                <p style={{ textAlign: 'center', color: '#6b7280' }}>Nenhuma categoria salva ainda.</p>
               ) : (
-                categorias.map(cat => (
+                categoriasLista.map(cat => {
+                  const selecionada = categoriasSelecionadas.includes(cat)
+                  return (
+                    <button
+                      key={`modal-cat-edit-${cat}`}
+                      onClick={() => toggleCategoriaModal(cat)}
+                      style={{
+                        padding: '16px 20px',
+                        borderRadius: '16px',
+                        fontSize: '16px',
+                        fontWeight: 'bold',
+                        textAlign: 'left',
+                        background: selecionada ? '#e0e7ff' : '#f9fafb',
+                        color: selecionada ? '#4f46e5' : '#1f2937',
+                        border: selecionada ? '2px solid #4f46e5' : '2px solid transparent',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                      }}
+                    >
+                      {cat}
+                      {selecionada && <CheckCircle size={20} color="#4f46e5" />}
+                    </button>
+                  )
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalEventosAberta && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', zIndex: 5000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => setModalEventosAberta(false)}>
+          <div style={{ background: 'white', width: '100%', maxWidth: '600px', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '24px', display: 'flex', flexDirection: 'column', maxHeight: '70vh', boxShadow: '0 -10px 25px rgba(0,0,0,0.1)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '900', color: '#1f2937', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Star size={24} color="#4f46e5" /> Selecionar Vitrine
+              </h2>
+              <button onClick={() => setModalEventosAberta(false)} style={{ background: '#f3f4f6', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><X size={20} /></button>
+            </div>
+           
+            <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingRight: '4px' }}>
+              {eventosLista.length === 0 ? (
+                <p style={{ textAlign: 'center', color: '#6b7280' }}>Nenhuma vitrine/evento cadastrado ainda.</p>
+              ) : (
+                eventosLista.map(ev => (
                   <button
-                    key={`modal-${cat}`}
+                    key={`modal-ev-edit-${ev}`}
                     onClick={() => {
-                      setCategoria(cat)
-                      setModalCategoriasAberta(false)
+                      setNomeDestaque(ev)
+                      setModalEventosAberta(false)
                     }}
                     style={{
                       padding: '16px 20px',
@@ -287,7 +388,7 @@ export default function EditarProduto() {
                       justifyContent: 'space-between'
                     }}
                   >
-                    {cat}
+                    {ev}
                   </button>
                 ))
               )}
@@ -344,14 +445,41 @@ export default function EditarProduto() {
               <label style={{ fontWeight: '600', color: '#475569' }}>Código de Barras</label>
               <input type="text" value={codigoBarras} onChange={(e) => setCodigoBarras(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
             </div>
+            
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
-              <label style={{ fontWeight: '600', color: '#475569' }}>Categoria</label>
+              <label style={{ fontWeight: '600', color: '#475569' }}>Categorias</label>
               <div style={{ display: 'flex', gap: '8px' }}>
-                <input type="text" value={categoria} onChange={(e) => setCategoria(e.target.value)} placeholder="Digite ou selecione..." style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
+                <input 
+                  type="text" 
+                  value={inputCategoria} 
+                  onChange={(e) => setInputCategoria(e.target.value)} 
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      adicionarCategoria();
+                    }
+                  }}
+                  placeholder="Nova categoria..." 
+                  style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', flex: 1, boxSizing: 'border-box' }} 
+                />
+                <button type="button" onClick={adicionarCategoria} style={{ background: '#4f46e5', color: 'white', border: 'none', borderRadius: '8px', padding: '0 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Plus size={20} />
+                </button>
                 <button type="button" onClick={() => setModalCategoriasAberta(true)} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569' }}>
                   <LayoutGrid size={20} />
                 </button>
               </div>
+
+              {categoriasSelecionadas.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '4px' }}>
+                  {categoriasSelecionadas.map((cat, index) => (
+                    <div key={index} style={{ background: '#e0e7ff', color: '#4f46e5', padding: '4px 12px', borderRadius: '16px', fontSize: '13px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {cat}
+                      <button type="button" onClick={() => removerCategoriaSelecionada(cat)} style={{ background: 'transparent', border: 'none', padding: 0, color: '#4f46e5', cursor: 'pointer', display: 'flex' }}><X size={14}/></button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -360,16 +488,20 @@ export default function EditarProduto() {
             <textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', minHeight: '100px', resize: 'vertical', boxSizing: 'border-box' }} />
           </div>
 
-          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '20px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
-              <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Preço Atual (R$) *</label>
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '16px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 120px' }}>
+              <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>À Vista (R$) *</label>
               <input type="number" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
-              <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Preço Antigo</label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 120px' }}>
+              <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>A Prazo (R$)</label>
+              <input type="number" step="0.01" value={precoPrazo} onChange={(e) => setPrecoPrazo(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 120px' }}>
+              <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Preço Antigo (R$)</label>
               <input type="number" step="0.01" value={precoAntigo} onChange={(e) => setPrecoAntigo(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 120px' }}>
               <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Qtd. Estoque</label>
               <input type="number" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
             </div>
@@ -397,17 +529,20 @@ export default function EditarProduto() {
             {destaque && (
               <div style={{ marginTop: '4px', paddingLeft: '36px' }}>
                 <label style={{ fontWeight: '600', color: '#475569', fontSize: '13px' }}>Nome da Seção (Ex: Dia dos Namorados)</label>
-                <input 
-                  type="text" 
-                  list="lista-eventos-edit" 
-                  value={nomeDestaque} 
-                  onChange={(e) => setNomeDestaque(e.target.value)} 
-                  placeholder="Selecione ou digite um novo nome..."
-                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', marginTop: '4px', boxSizing: 'border-box' }} 
-                />
-                <datalist id="lista-eventos-edit">
-                  {eventos.map(ev => <option key={ev} value={ev} />)}
-                </datalist>
+                
+                <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                  <input 
+                    type="text" 
+                    value={nomeDestaque} 
+                    onChange={(e) => setNomeDestaque(e.target.value)} 
+                    placeholder="Digite um novo nome..."
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', boxSizing: 'border-box' }} 
+                  />
+                  <button type="button" onClick={() => setModalEventosAberta(true)} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569' }}>
+                    <LayoutGrid size={20} />
+                  </button>
+                </div>
+
               </div>
             )}
           </div>
