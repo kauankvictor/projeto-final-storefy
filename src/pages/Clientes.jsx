@@ -3,7 +3,7 @@ import { Search, UserPlus, X, Save, Calendar, FileText, Trash2, AlertCircle, Pho
 
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, getDoc } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
-
+//teste
 export default function Clientes() {
   const [clientes, setClientes] = useState([])
   const [busca, setBusca] = useState('')
