@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
-import { DollarSign, ShoppingBag, CreditCard, Calendar, FileDown, PieChart } from 'lucide-react'
+import { DollarSign, ShoppingBag, CreditCard, Calendar, FileDown, FileText, PieChart, Users, UserCheck } from 'lucide-react'
 
-// Importações cruciais do Firebase
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
 
@@ -10,12 +9,10 @@ export default function Financeiro() {
     return `${dataObj.getFullYear()}-${String(dataObj.getMonth() + 1).padStart(2, '0')}-${String(dataObj.getDate()).padStart(2, '0')}`
   }
 
-  // ================= ESTADOS DE FILTRO =================
   const [dataInicial, setDataInicial] = useState(obterDataLocal()) 
   const [dataFinal, setDataFinal] = useState(obterDataLocal()) 
   const [carregando, setCarregando] = useState(true)
   
-  // ================= ESTADOS DOS RESULTADOS E DADOS =================
   const [vendasFiltradas, setVendasFiltradas] = useState([])
   const [dadosLoja, setDadosLoja] = useState({ nomeLoja: 'Storefy', ceo: 'Administrador', telefone: '-', email: '-', endereco: 'Endereço não informado' })
   const [metricas, setMetricas] = useState({
@@ -27,7 +24,9 @@ export default function Financeiro() {
     fiado: 0
   })
 
-  // ================= ESTADO RESPONSIVO =================
+  const [capitalNaRua, setCapitalNaRua] = useState(0)
+  const [desempenhoVendedores, setDesempenhoVendedores] = useState([])
+
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
   useEffect(() => {
@@ -36,7 +35,6 @@ export default function Financeiro() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  // ================= CARREGAR DADOS DA LOJA =================
   useEffect(() => {
     const carregarConfiguracoesNuvem = async () => {
       try {
@@ -52,7 +50,6 @@ export default function Financeiro() {
     carregarConfiguracoesNuvem()
   }, [])
 
-  // ================= BOTÕES RÁPIDOS =================
   const setFiltroHoje = () => {
     const hoje = obterDataLocal()
     setDataInicial(hoje)
@@ -75,7 +72,6 @@ export default function Financeiro() {
     setDataFinal(obterDataLocal(ultimoDia))
   }
 
-  // ================= AUXILIARES DE DATA =================
   const converterParaDate = (dataStr) => {
     if (!dataStr || !dataStr.includes('/')) return null
     const [dia, mes, ano] = dataStr.split('/')
@@ -88,7 +84,6 @@ export default function Financeiro() {
     return `${dia}/${mes}/${ano}`
   }
 
-  // ================= LEITURA E FILTRAGEM DIRETO DO FIREBASE =================
   useEffect(() => {
     const calcularDadosFinanceiros = async () => {
       setCarregando(true)
@@ -115,16 +110,82 @@ export default function Financeiro() {
 
         filtradas.forEach(venda => {
           const valor = Number(venda.total) || 0
-          faturamento += valor
-
           const formaNorm = String(venda.formaPagamento || '').toLowerCase()
-          if (formaNorm.includes('pix')) formas.pix += valor
-          else if (formaNorm.includes('cart') || formaNorm.includes('créd') || formaNorm.includes('déb')) formas.cartao += valor
-          else if (formaNorm.includes('dinh') || formaNorm.includes('espéc')) formas.dinheiro += valor
-          else if (formaNorm.includes('fia') || formaNorm.includes('anota')) formas.fiado += valor
-          else formas.dinheiro += valor 
+
+          if (venda.tipo === 'VENDA') {
+            faturamento += valor
+            if (formaNorm.includes('pix')) formas.pix += valor
+            else if (formaNorm.includes('cart') || formaNorm.includes('créd') || formaNorm.includes('déb')) formas.cartao += valor
+            else if (formaNorm.includes('dinh') || formaNorm.includes('espéc')) formas.dinheiro += valor
+            else formas.dinheiro += valor 
+          } else if (venda.tipo === 'FIADO') {
+            formas.fiado += valor
+          }
         })
 
+        let perfomanceMap = {}
+        let vendedoresCadastrados = []
+        const docRefVendedores = doc(db, "configuracoes", "vendedores")
+        const docSnapVendedores = await getDoc(docRefVendedores)
+        if (docSnapVendedores.exists() && docSnapVendedores.data().lista) {
+          vendedoresCadastrados = docSnapVendedores.data().lista
+        }
+
+        vendedoresCadastrados.forEach(nome => {
+          perfomanceMap[nome] = { nome, totalVendido: 0, vendasPendentesFiado: 0 }
+        })
+
+        filtradas.forEach(venda => {
+          if (venda.tipo === 'VENDA' && venda.vendedor && venda.vendedor !== 'Valor abatido na conta do cliente') {
+            const vName = venda.vendedor
+            if (!perfomanceMap[vName]) {
+              perfomanceMap[vName] = { nome: vName, totalVendido: 0, vendasPendentesFiado: 0 }
+            }
+            perfomanceMap[vName].totalVendido += (Number(venda.total) || 0)
+          }
+        })
+
+        const queryClientes = await getDocs(collection(db, "clientes"))
+        const clientes = queryClientes.docs.map(doc => doc.data())
+        
+        let totalDevendoNesteExatoMomento = 0
+        
+        clientes.forEach(cliente => {
+          if (cliente.anotacoes && Array.isArray(cliente.anotacoes)) {
+            cliente.anotacoes.forEach(nota => {
+              const valorOriginal = Number(nota.valor) || 0
+              const valorPago = Number(nota.valorPago) || 0
+              const pendente = valorOriginal - valorPago
+
+              if (nota.status === 'Pendente') {
+                totalDevendoNesteExatoMomento += pendente
+              }
+
+              const dataNota = converterParaDate(nota.dataCriacao)
+              if (dataNota && dataNota >= inicio && dataNota <= fim) {
+                const match = nota.texto ? nota.texto.match(/\(Vendedor: (.*?)\)/) : null
+                let vName = 'Desconhecido'
+                if (match && match[1]) {
+                  vName = match[1].trim()
+                }
+
+                if (vName !== 'Desconhecido' || pendente > 0 || valorPago > 0) {
+                  if (!perfomanceMap[vName]) {
+                    perfomanceMap[vName] = { nome: vName, totalVendido: 0, vendasPendentesFiado: 0 }
+                  }
+                  perfomanceMap[vName].totalVendido += valorPago
+                  perfomanceMap[vName].vendasPendentesFiado += pendente
+                }
+              }
+            })
+          }
+        })
+
+        let performanceArr = Object.values(perfomanceMap).filter(p => p.totalVendido > 0 || p.vendasPendentesFiado > 0 || vendedoresCadastrados.includes(p.nome))
+        performanceArr.sort((a, b) => b.totalVendido - a.totalVendido)
+        setDesempenhoVendedores(performanceArr)
+        
+        setCapitalNaRua(totalDevendoNesteExatoMomento)
         setVendasFiltradas(filtradas)
         setMetricas({
           faturamentoTotal: faturamento,
@@ -142,7 +203,6 @@ export default function Financeiro() {
     calcularDadosFinanceiros()
   }, [dataInicial, dataFinal])
 
-  // ================= GERADOR DE RELATÓRIO PDF EXIBINDO DADOS DA NUVEM =================
   const gerarRelatorioPDF = () => {
     const formatoMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor)
     const janelaImpressao = window.open('', '_blank')
@@ -150,7 +210,7 @@ export default function Financeiro() {
     const htmlPDF = `
       <html>
         <head>
-          <title>Relatório Financeiro - ${dadosLoja.nomeLoja}</title>
+          <title>Relatório Financeiro</title>
           <style>
             body { font-family: 'Helvetica', 'Arial', sans-serif; color: #1e293b; padding: 40px; margin: 0; line-height: 1.5; }
             .header { border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 30px; display: flex; justify-content: space-between; }
@@ -190,7 +250,7 @@ export default function Financeiro() {
 
           <div class="grid-cards">
             <div class="card">
-              <h4>Faturamento do Período</h4>
+              <h4>Faturamento Realizado</h4>
               <h2>${formatoMoeda(metricas.faturamentoTotal)}</h2>
             </div>
             <div class="card">
@@ -212,7 +272,7 @@ export default function Financeiro() {
                 <tr><td>Dinheiro à Vista</td><td><strong>${formatoMoeda(metricas.dinheiro)}</strong></td></tr>
                 <tr><td>Transferência Pix</td><td><strong>${formatoMoeda(metricas.pix)}</strong></td></tr>
                 <tr><td>Cartão (Crédito/Débito)</td><td><strong>${formatoMoeda(metricas.cartao)}</strong></td></tr>
-                <tr><td>Fiado / Caderno de Notas</td><td style="color: #ef4444;"><strong>${formatoMoeda(metricas.fiado)}</strong></td></tr>
+                <tr><td>Fiado Gerado no Período</td><td style="color: #ef4444;"><strong>${formatoMoeda(metricas.fiado)}</strong></td></tr>
               </tbody>
             </table>
           </div>
@@ -228,7 +288,7 @@ export default function Financeiro() {
                     <strong>Cliente:</strong> ${v.cliente?.nome || 'Consumidor Final'} <br/>
                     <small style="color: #64748b;">Meio: ${v.formaPagamento}</small>
                   </div>
-                  <div style="font-weight: bold; color: #10b981; display: flex; flex-direction: column; align-items: flex-end;">
+                  <div style="font-weight: bold; color: ${v.tipo === 'FIADO' ? '#ef4444' : '#10b981'}; display: flex; flex-direction: column; align-items: flex-end;">
                     <span>${formatoMoeda(v.total)}</span>
                     ${v.desconto > 0 ? `<small style="color: #ef4444; font-size: 11px;">(Desc: ${formatoMoeda(v.desconto)})</small>` : ''}
                   </div>
@@ -253,37 +313,75 @@ export default function Financeiro() {
     janelaImpressao.document.close()
   }
 
+  const gerarPlanilhaCSV = () => {
+    if (vendasFiltradas.length === 0) {
+      alert("Não há vendas neste período para exportar.")
+      return
+    }
+
+    let csvContent = "Data;Hora;Vendedor;Cliente;Forma Pagamento;Desconto;Valor Total\n"
+
+    vendasFiltradas.forEach(v => {
+      const data = v.data || ''
+      const hora = v.hora || ''
+      const vendedor = v.vendedor || 'Não informado'
+      const cliente = v.cliente?.nome || 'Consumidor Final'
+      const pagamento = v.formaPagamento || ''
+      const desconto = Number(v.desconto || 0).toFixed(2).replace('.', ',')
+      const total = Number(v.total || 0).toFixed(2).replace('.', ',')
+
+      csvContent += `"${data}";"${hora}";"${vendedor}";"${cliente}";"${pagamento}";"${desconto}";"${total}"\n`
+    })
+
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement("a")
+    const url = URL.createObjectURL(blob)
+    
+    link.setAttribute("href", url)
+    link.setAttribute("download", `storefy_vendas_${dataInicial}_a_${dataFinal}.csv`)
+    link.style.visibility = 'hidden'
+    
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
   const formatarBRL = (v) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
-      {/* CABEÇALHO RESPONSIVO */}
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', flexWrap: 'wrap', gap: '16px', flexDirection: isMobile ? 'column' : 'row' }}>
         <div>
           <h1 style={{ fontSize: isMobile ? '24px' : '28px', color: '#1e1b4b', fontWeight: 'bold', margin: 0 }}>Resumo Financeiro</h1>
           <p style={{ color: '#64748b', marginTop: '4px', fontSize: isMobile ? '13px' : '15px', margin: 0 }}>Acompanhe métricas de faturamento em tempo real sincronizadas na nuvem</p>
         </div>
 
-        <button 
-          onClick={gerarRelatorioPDF}
-          style={{ background: '#4f46e5', color: 'white', border: 'none', padding: '12px 20px', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '15px', boxShadow: '0 4px 10px rgba(79, 70, 229, 0.2)', width: isMobile ? '100%' : 'auto' }}
-        >
-          <FileDown size={18} /> Exportar Relatório (PDF)
-        </button>
+        <div style={{ display: 'flex', gap: '12px', width: isMobile ? '100%' : 'auto', flexDirection: isMobile ? 'column' : 'row' }}>
+          <button 
+            onClick={gerarRelatorioPDF}
+            style={{ background: '#4f46e5', color: 'white', border: 'none', padding: '12px 20px', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '15px', boxShadow: '0 4px 10px rgba(79, 70, 229, 0.2)', flex: 1 }}
+          >
+            <FileText size={18} /> Relatório PDF
+          </button>
+          
+          <button 
+            onClick={gerarPlanilhaCSV}
+            style={{ background: '#10b981', color: 'white', border: 'none', padding: '12px 20px', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '15px', boxShadow: '0 4px 10px rgba(16, 185, 129, 0.2)', flex: 1 }}
+          >
+            <FileDown size={18} /> Exportar Excel
+          </button>
+        </div>
       </header>
 
-      {/* PAINEL DE FILTROS INTELIGENTES RESPONSIVO */}
       <div style={{ background: 'white', padding: isMobile ? '16px' : '20px', borderRadius: '16px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', border: '1px solid #f1f5f9', display: 'flex', gap: '16px', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center' }}>
         
-        {/* Botões Rápidos */}
         <div style={{ display: 'flex', alignItems: 'center', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden', width: isMobile ? '100%' : 'auto' }}>
           <button onClick={setFiltroHoje} style={{ flex: 1, background: 'transparent', color: '#1e1b4b', border: 'none', padding: '10px 12px', fontWeight: '600', cursor: 'pointer', fontSize: isMobile ? '12px' : '14px', borderRight: '1px solid #e2e8f0' }}>Hoje</button>
           <button onClick={setFiltroSemana} style={{ flex: 1, background: 'transparent', color: '#1e1b4b', border: 'none', padding: '10px 12px', fontWeight: '600', cursor: 'pointer', fontSize: isMobile ? '12px' : '14px', borderRight: '1px solid #e2e8f0' }}>Semana</button>
           <button onClick={setFiltroMes} style={{ flex: 1, background: 'transparent', color: '#1e1b4b', border: 'none', padding: '10px 12px', fontWeight: '600', cursor: 'pointer', fontSize: isMobile ? '12px' : '14px' }}>Mês</button>
         </div>
 
-        {/* Seleção de Data Inicial e Final */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginLeft: isMobile ? '0' : 'auto', flexDirection: isMobile ? 'column' : 'row', width: isMobile ? '100%' : 'auto' }}>
           <div style={{ display: 'flex', alignItems: 'center', background: '#f8fafc', padding: '8px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', gap: '8px', width: isMobile ? '100%' : 'auto', boxSizing: 'border-box' }}>
             <Calendar size={18} color="#64748b" />
@@ -313,53 +411,94 @@ export default function Financeiro() {
         <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', fontWeight: 'bold' }}>Calculando balanço e somando registros da nuvem...</div>
       ) : (
         <>
-          {/* METRICAS PRINCIPAIS RESPONSIVAS */}
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '24px' }}>
             <div style={{ background: 'white', padding: '24px', borderRadius: '20px', border: '1px solid #f1f5f9', display: 'flex', gap: '16px', alignItems: 'center' }}>
               <div style={{ background: '#d1fae5', color: '#059669', padding: '14px', borderRadius: '14px' }}><DollarSign size={28} /></div>
               <div>
-                <p style={{ color: '#64748b', fontSize: '13px', fontWeight: '700', textTransform: 'uppercase', margin: 0 }}>Faturamento do Período</p>
-                <h2 style={{ fontSize: isMobile ? '24px' : '32px', color: '#1e1b4b', fontWeight: '900', marginTop: '4px', margin: 0 }}>{formatarBRL(metricas.faturamentoTotal)}</h2>
+                <p style={{ color: '#64748b', fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', margin: 0 }}>Faturamento do Período</p>
+                <h2 style={{ fontSize: isMobile ? '24px' : '28px', color: '#1e1b4b', fontWeight: '900', marginTop: '4px', margin: 0 }}>{formatarBRL(metricas.faturamentoTotal)}</h2>
               </div>
             </div>
 
             <div style={{ background: 'white', padding: '24px', borderRadius: '20px', border: '1px solid #f1f5f9', display: 'flex', gap: '16px', alignItems: 'center' }}>
               <div style={{ background: '#e0e7ff', color: '#4f46e5', padding: '14px', borderRadius: '14px' }}><ShoppingBag size={28} /></div>
               <div>
-                <p style={{ color: '#64748b', fontSize: '13px', fontWeight: '700', textTransform: 'uppercase', margin: 0 }}>Quantidade de Vendas</p>
-                <h2 style={{ fontSize: isMobile ? '24px' : '32px', color: '#1e1b4b', fontWeight: '900', marginTop: '4px', margin: 0 }}>{metricas.quantidadeVendas} Feitas</h2>
+                <p style={{ color: '#64748b', fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', margin: 0 }}>Operações Concluídas</p>
+                <h2 style={{ fontSize: isMobile ? '24px' : '28px', color: '#1e1b4b', fontWeight: '900', marginTop: '4px', margin: 0 }}>{metricas.quantidadeVendas} Feitas</h2>
+              </div>
+            </div>
+
+            <div style={{ background: 'white', padding: '24px', borderRadius: '20px', border: '1px solid #fee2e2', display: 'flex', gap: '16px', alignItems: 'center' }}>
+              <div style={{ background: '#fecaca', color: '#b91c1c', padding: '14px', borderRadius: '14px' }}><Users size={28} /></div>
+              <div>
+                <p style={{ color: '#b91c1c', fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', margin: 0 }}>Capital na Rua (Geral)</p>
+                <h2 style={{ fontSize: isMobile ? '24px' : '28px', color: '#991b1b', fontWeight: '900', marginTop: '4px', margin: 0 }}>{formatarBRL(capitalNaRua)}</h2>
               </div>
             </div>
           </div>
 
-          {/* DETALHAMENTO POR MEIO DE RECEBIMENTO RESPONSIVO */}
-          <div style={{ background: 'white', padding: isMobile ? '20px' : '28px', borderRadius: '20px', border: '1px solid #f1f5f9' }}>
-            <h3 style={{ fontSize: '18px', color: '#1e1b4b', fontWeight: 'bold', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', margin: 0, paddingBottom: '16px' }}>
-              <PieChart size={20} color="#4f46e5" /> Detalhamento por Canal de Entrada
-            </h3>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '24px', alignItems: 'stretch' }}>
+            <div style={{ background: 'white', padding: isMobile ? '20px' : '28px', borderRadius: '20px', border: '1px solid #f1f5f9', height: '100%' }}>
+              <h3 style={{ fontSize: '18px', color: '#1e1b4b', fontWeight: 'bold', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', margin: '0 0 20px 0' }}>
+                <PieChart size={20} color="#4f46e5" /> Detalhamento por Canal (Período)
+              </h3>
 
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px' }}>
-              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
-                <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Dinheiro</span>
-                <h4 style={{ fontSize: isMobile ? '16px' : '20px', color: '#1e1b4b', fontWeight: '800', margin: '6px 0 0 0' }}>{formatarBRL(metricas.dinheiro)}</h4>
-              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
+                  <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Dinheiro</span>
+                  <h4 style={{ fontSize: isMobile ? '16px' : '20px', color: '#1e1b4b', fontWeight: '800', margin: '6px 0 0 0' }}>{formatarBRL(metricas.dinheiro)}</h4>
+                </div>
 
-              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
-                <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Pix</span>
-                <h4 style={{ fontSize: isMobile ? '16px' : '20px', color: '#1e1b4b', fontWeight: '800', margin: '6px 0 0 0' }}>{formatarBRL(metricas.pix)}</h4>
-              </div>
+                <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
+                  <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Pix</span>
+                  <h4 style={{ fontSize: isMobile ? '16px' : '20px', color: '#1e1b4b', fontWeight: '800', margin: '6px 0 0 0' }}>{formatarBRL(metricas.pix)}</h4>
+                </div>
 
-              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
-                <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Cartões</span>
-                <h4 style={{ fontSize: isMobile ? '16px' : '20px', color: '#1e1b4b', fontWeight: '800', margin: '6px 0 0 0' }}>{formatarBRL(metricas.cartao)}</h4>
-              </div>
+                <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
+                  <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Cartões</span>
+                  <h4 style={{ fontSize: isMobile ? '16px' : '20px', color: '#1e1b4b', fontWeight: '800', margin: '6px 0 0 0' }}>{formatarBRL(metricas.cartao)}</h4>
+                </div>
 
-              <div style={{ background: '#fef2f2', padding: '16px', borderRadius: '14px', border: '1px solid #fee2e2' }}>
-                <span style={{ fontSize: '12px', color: '#ef4444', fontWeight: 'bold', textTransform: 'uppercase' }}>Fiado</span>
-                <h4 style={{ fontSize: isMobile ? '16px' : '20px', color: '#ef4444', fontWeight: '800', margin: '6px 0 0 0' }}>{formatarBRL(metricas.fiado)}</h4>
+                <div style={{ background: '#fef2f2', padding: '16px', borderRadius: '14px', border: '1px solid #fee2e2' }}>
+                  <span style={{ fontSize: '12px', color: '#ef4444', fontWeight: 'bold', textTransform: 'uppercase' }}>Fiado Lançado</span>
+                  <h4 style={{ fontSize: isMobile ? '16px' : '20px', color: '#ef4444', fontWeight: '800', margin: '6px 0 0 0' }}>{formatarBRL(metricas.fiado)}</h4>
+                </div>
               </div>
             </div>
+
+            <div style={{ background: 'white', padding: isMobile ? '20px' : '28px', borderRadius: '20px', border: '1px solid #f1f5f9', height: '100%' }}>
+              <h3 style={{ fontSize: '18px', color: '#1e1b4b', fontWeight: 'bold', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', margin: '0 0 20px 0' }}>
+                <UserCheck size={20} color="#4f46e5" /> Desempenho da Equipe (Período)
+              </h3>
+              
+              {desempenhoVendedores.length === 0 ? (
+                <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <p style={{ color: '#94a3b8', fontStyle: 'italic', textAlign: 'center', margin: 0 }}>Nenhuma venda associada a um vendedor neste período.</p>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '12px', maxHeight: '200px', overflowY: 'auto', paddingRight: '8px' }}>
+                  {desempenhoVendedores.map((vendedor, index) => (
+                    <div key={index} style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b', textTransform: 'capitalize' }}>
+                        {vendedor.nome}
+                      </span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '13px', color: '#64748b' }}>Vendido e Recebido:</span>
+                        <span style={{ fontSize: '15px', fontWeight: '800', color: '#10b981' }}>{formatarBRL(vendedor.totalVendido)}</span>
+                      </div>
+                      {vendedor.vendasPendentesFiado > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '12px', color: '#ef4444' }}>Aberto no Fiado:</span>
+                          <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#ef4444' }}>{formatarBRL(vendedor.vendasPendentesFiado)}</span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
+
         </>
       )}
     </div>

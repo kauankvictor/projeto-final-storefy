@@ -5,14 +5,14 @@ export default function ReciboModal({ registro, dadosLoja, onClose }) {
 
   const formatoMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(valor) || 0)
 
-  // Função corrigida para gerar o texto perfeitamente
+  // Função corrigida para gerar o texto perfeitamente com o ID do Pedido
   const gerarTextoRecibo = () => {
     let texto = `*RECIBO DE PAGAMENTO*\n`
     texto += `*${dadosLoja?.nomeLoja || 'Storefy'}*\n`
     if (dadosLoja?.telefone) texto += `Contato: ${dadosLoja.telefone}\n`
     texto += `.......................................\n\n`
     
-    // Variável registro.data corrigida aqui
+    if (registro.idRegistro) texto += `ID do Pedido: #${registro.idRegistro}\n`
     texto += `Data: ${registro.data} às ${registro.hora}\n`
     texto += `Operador: ${registro.vendedor || 'Não informado'}\n`
     if (registro.cliente?.nome) texto += `Cliente: ${registro.cliente.nome}\n`
@@ -88,6 +88,7 @@ export default function ReciboModal({ registro, dadosLoja, onClose }) {
           <div style={{ borderBottom: '1px dashed #000', margin: '12px 0' }}></div>
 
           <div style={{ marginBottom: '12px', fontSize: '12px' }}>
+            {registro.idRegistro && <div><strong>ID do Pedido:</strong> #{registro.idRegistro}</div>}
             <div><strong>Data:</strong> {registro.data} às {registro.hora}</div>
             <div><strong>Operador:</strong> {registro.vendedor || 'Não informado'}</div>
             {registro.cliente?.nome && <div><strong>Cliente:</strong> {registro.cliente.nome}</div>}

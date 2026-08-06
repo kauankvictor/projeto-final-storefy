@@ -13,6 +13,10 @@ export default function Historico() {
   const [tipoFiltro, setTipoFiltro] = useState('TODOS')
   const [carregando, setCarregando] = useState(true)
 
+  // ================= ESTADOS DA PAGINAÇÃO =================
+  const [paginaAtual, setPaginaAtual] = useState(1)
+  const itensPorPagina = 25
+
   const [authModal, setAuthModal] = useState({ isOpen: false, targetId: null, titulo: '' })
   const [senhaDigitada, setSenhaDigitada] = useState('')
   const [seguranca, setSeguranca] = useState({})
@@ -28,6 +32,11 @@ export default function Historico() {
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
+
+  // Voltar para a página 1 sempre que o usuário pesquisar ou filtrar algo
+  useEffect(() => {
+    setPaginaAtual(1)
+  }, [busca, tipoFiltro, dataFiltro])
 
   useEffect(() => {
     const carregarConfiguracoesNuvem = async () => {
@@ -177,20 +186,28 @@ export default function Historico() {
 
     if (busca.trim()) {
       const termo = busca.toLowerCase()
+      const idStr = String(reg.idRegistro || '') // Pesquisa pelo ID da venda também
+
       if (ehVendaNormal || ehFiado || ehBaixa) {
         const nomeCliente = reg.cliente?.nome?.toLowerCase() || ''
         const nomeVendedor = reg.vendedor?.toLowerCase() || ''
         const itensVenda = (reg.itens || []).map(item => item?.nome?.toLowerCase() || '').join(' ')
-        if (!nomeCliente.includes(termo) && !itensVenda.includes(termo) && !nomeVendedor.includes(termo)) return false
+        if (!nomeCliente.includes(termo) && !itensVenda.includes(termo) && !nomeVendedor.includes(termo) && !idStr.includes(termo)) return false
       } else {
         const nomeProduto = reg.produtoAlterado?.toLowerCase() || ''
         const detalhes = reg.detalhes?.toLowerCase() || ''
-        if (!nomeProduto.includes(termo) && !detalhes.includes(termo)) return false
+        if (!nomeProduto.includes(termo) && !detalhes.includes(termo) && !idStr.includes(termo)) return false
       }
     }
 
     return true
   })
+
+  // ================= LÓGICA DE PAGINAÇÃO =================
+  const totalPaginas = Math.ceil(registrosFiltrados.length / itensPorPagina)
+  const indexUltimoItem = paginaAtual * itensPorPagina
+  const indexPrimeiroItem = indexUltimoItem - itensPorPagina
+  const registrosPaginados = registrosFiltrados.slice(indexPrimeiroItem, indexUltimoItem)
 
   const formatoMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor)
 
@@ -223,7 +240,7 @@ export default function Historico() {
           <Search size={20} color="#64748b" />
           <input 
             type="text" 
-            placeholder="Buscar por cliente, vendedor..." 
+            placeholder="Buscar por ID, cliente, vendedor..." 
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
             style={{ border: 'none', background: 'transparent', outline: 'none', marginLeft: '10px', width: '100%', color: '#1e1b4b', fontSize: '15px' }} 
@@ -247,15 +264,40 @@ export default function Historico() {
         </div>
       </div>
 
+      {/* CONTROLES DE PAGINAÇÃO (TOPO) */}
+      {totalPaginas > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '-8px' }}>
+          {Array.from({ length: totalPaginas }, (_, i) => i + 1).map(num => (
+            <button
+              key={num}
+              onClick={() => setPaginaAtual(num)}
+              style={{
+                padding: '8px 16px',
+                borderRadius: '8px',
+                background: paginaAtual === num ? '#4f46e5' : '#ffffff',
+                color: paginaAtual === num ? 'white' : '#64748b',
+                border: paginaAtual === num ? 'none' : '1px solid #e2e8f0',
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                transition: '0.2s',
+                boxShadow: paginaAtual === num ? '0 4px 6px rgba(79, 70, 229, 0.2)' : 'none'
+              }}
+            >
+              {num}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        {registrosFiltrados.length === 0 ? (
+        {registrosPaginados.length === 0 ? (
           <div style={{ background: 'white', padding: '60px 20px', borderRadius: '16px', textAlign: 'center', color: '#94a3b8' }}>
             <History size={48} style={{ margin: '0 auto 16px auto', opacity: 0.3 }} />
-            <p style={{ fontSize: '16px', fontWeight: '500' }}>Nenhuma atividade encontrada na nuvem.</p>
+            <p style={{ fontSize: '16px', fontWeight: '500' }}>Nenhuma atividade encontrada.</p>
           </div>
         ) : (
-          registrosFiltrados.map((reg, index) => {
-            const ehBaixa = reg.vendedor === 'Baixa de Fiado' || reg.tipo === 'BAIXA' || reg.itens?.[0]?.id === 'baixa_conta'
+          registrosPaginados.map((reg, index) => {
+            const ehBaixa = reg.vendedor === 'Baixa de Fiado - Any' || reg.tipo === 'BAIXA' || reg.itens?.[0]?.id === 'baixa_conta'
             const ehFiado = reg.tipo === 'FIADO'
             const ehEstoque = reg.tipo === 'SISTEMA' || reg.tipo === 'ESTOQUE'
             const ehVendaNormal = reg.tipo === 'VENDA' && !ehBaixa
@@ -293,8 +335,9 @@ export default function Historico() {
                       {iconeCategoria}
                     </div>
                     <div>
-                      <span style={{ fontSize: '15px', fontWeight: 'bold', color: '#1e1b4b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      <span style={{ fontSize: '15px', fontWeight: 'bold', color: '#1e1b4b', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                         {labelTipo}
+                        {reg.idRegistro && <span style={{ fontSize: '10px', background: '#e2e8f0', color: '#475569', padding: '2px 6px', borderRadius: '4px', letterSpacing: '0' }}>#{reg.idRegistro}</span>}
                       </span>
                       <div style={{ display: 'flex', gap: '12px', color: '#64748b', fontSize: '12px', marginTop: '4px' }}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Calendar size={12} /> {reg?.data || 'Sem data'}</span>
