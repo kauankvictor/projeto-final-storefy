@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { ShieldCheck, Download, UploadCloud, AlertTriangle, Store, Trash2, User, MapPin, Phone, Mail, Key, Save, Lock, X, ClipboardList, Settings, EyeOff, Plus, Palette, Image as ImageIcon, Share2, Globe, Link as LinkIcon, MessageCircle } from 'lucide-react'
 import { collection, getDocs, addDoc, deleteDoc, doc, getDoc, setDoc } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
 
 export default function Configuracoes() {
+  const location = useLocation()
   const [status, setStatus] = useState({ tipo: '', msg: '' })
   const [abaAtiva, setAbaAtiva] = useState('loja')
   
@@ -39,6 +41,12 @@ export default function Configuracoes() {
   const [authModal, setAuthModal] = useState({ isOpen: false, acao: null, titulo: '', payload: null, tipoSenhaExigida: 'master' })
   const [credenciais, setCredenciais] = useState({ login: '', senha: '' }) 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+
+  useEffect(() => {
+    if (location.state && location.state.aba) {
+      setAbaAtiva(location.state.aba)
+    }
+  }, [location])
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768)

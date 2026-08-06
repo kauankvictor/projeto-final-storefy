@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Search, Plus, Edit2, Image as ImageIcon, Filter, FileDown, X, Settings, Trash2, CreditCard, AlertCircle, Star } from 'lucide-react'
+import { Search, Plus, Edit2, Image as ImageIcon, Filter, FileDown, X, Settings, Trash2, CreditCard, AlertCircle, Star, Palette } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import { collection, getDocs, doc, getDoc, updateDoc, setDoc } from 'firebase/firestore'
@@ -359,15 +359,17 @@ export default function Estoque() {
                 </span>
               </div>
 
-              {produtoSelecionado.divideCartao && (
+              {produtoSelecionado.mostrarParcelamento && (
                 <div style={{ background: '#fffbeb', padding: '12px', borderRadius: '8px', border: '1px solid #fde68a', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <span style={{ fontSize: '13px', color: '#d97706', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <CreditCard size={16} />
                     Cartão {produtoSelecionado.maxParcelas ? `em até ${produtoSelecionado.maxParcelas}x` : ''}
                   </span>
-                  <span style={{ fontSize: '12px', color: '#b45309', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <AlertCircle size={14} /> Valores a prazo podem sofrer acréscimos.
-                  </span>
+                  {produtoSelecionado.mostrarAvisoAcrescimo && (
+                    <span style={{ fontSize: '12px', color: '#b45309', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <AlertCircle size={14} /> Valores a prazo podem sofrer acréscimos.
+                    </span>
+                  )}
                 </div>
               )}
 
@@ -389,6 +391,12 @@ export default function Estoque() {
         </div>
         
         <div style={{ display: 'flex', gap: '12px', width: isMobile ? '100%' : 'auto' }}>
+          <button 
+            onClick={() => navigate('/configuracoes', { state: { aba: 'catalogo' } })}
+            style={{ flex: isMobile ? 1 : 'none', justifyContent: 'center', background: 'white', color: '#db2777', border: '1px solid #e2e8f0', padding: '12px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
+          >
+            <Palette size={18} /> Catálogo
+          </button>
           <button 
             onClick={gerarPDFEstoque}
             style={{ flex: isMobile ? 1 : 'none', justifyContent: 'center', background: 'white', color: '#4f46e5', border: '1px solid #e2e8f0', padding: '12px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}

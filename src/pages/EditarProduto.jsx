@@ -20,8 +20,9 @@ export default function EditarProduto() {
   const [precoAntigo, setPrecoAntigo] = useState('')
   const [quantidade, setQuantidade] = useState('')
   
-  const [divideCartao, setDivideCartao] = useState(false)
+  const [mostrarParcelamento, setMostrarParcelamento] = useState(false)
   const [maxParcelas, setMaxParcelas] = useState('')
+  const [mostrarAvisoAcrescimo, setMostrarAvisoAcrescimo] = useState(false)
 
   const [visivelCatalogo, setVisivelCatalogo] = useState(true)
   const [destaque, setDestaque] = useState(false)
@@ -93,8 +94,9 @@ export default function EditarProduto() {
           setPrecoAntigo(dados.precoAntigo ? dados.precoAntigo.toString() : '')
           setQuantidade(dados.quantidade ? dados.quantidade.toString() : '0')
           
-          setDivideCartao(dados.divideCartao || false)
+          setMostrarParcelamento(dados.mostrarParcelamento || false)
           setMaxParcelas(dados.maxParcelas ? dados.maxParcelas.toString() : '')
+          setMostrarAvisoAcrescimo(dados.mostrarAvisoAcrescimo || false)
 
           setVisivelCatalogo(dados.visivelCatalogo !== false) 
           setDestaque(dados.destaque || false)
@@ -232,12 +234,6 @@ export default function EditarProduto() {
         if (codigoBarras !== (produtoOriginal.codigoBarras || '')) {
           mudancas.push(`Código de barras modificado`)
         }
-        if (divideCartao !== (produtoOriginal.divideCartao || false)) {
-          mudancas.push(`Disponibilidade de parcelamento modificada`)
-        }
-        if (parseInt(maxParcelas || 0, 10) !== parseInt(produtoOriginal.maxParcelas || 0, 10)) {
-          mudancas.push(`Máximo de parcelas modificado`)
-        }
         
         const categoriasAntigasStr = Array.isArray(produtoOriginal.categorias) ? produtoOriginal.categorias.join(', ') : (produtoOriginal.categoria || '')
         if (categoriasAtuaisStr !== categoriasAntigasStr) {
@@ -264,8 +260,9 @@ export default function EditarProduto() {
         preco: novoPrecoNum,
         precoAntigo: precoAntigo ? parseFloat(precoAntigo) : null,
         quantidade: novaQtdNum,
-        divideCartao: divideCartao,
-        maxParcelas: divideCartao && maxParcelas ? parseInt(maxParcelas, 10) : null,
+        mostrarParcelamento: mostrarParcelamento,
+        maxParcelas: mostrarParcelamento && maxParcelas ? parseInt(maxParcelas, 10) : null,
+        mostrarAvisoAcrescimo: mostrarAvisoAcrescimo,
         visivelCatalogo: visivelCatalogo,
         destaque: destaque,
         nomeDestaque: destaque ? nomeDestaque.trim() : null,
@@ -513,31 +510,36 @@ export default function EditarProduto() {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '15px', color: '#1e1b4b', margin: '0 0 4px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <CreditCard size={18} color="#4f46e5" /> Configuração de Parcelamento
+              <CreditCard size={18} color="#4f46e5" /> Exibição de Parcelamento (Catálogo)
             </h3>
             
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <input type="checkbox" id="divideCartao" checked={divideCartao} onChange={(e) => setDivideCartao(e.target.checked)} style={{ width: '24px', height: '24px', cursor: 'pointer', accentColor: '#4f46e5' }} />
-              <label htmlFor="divideCartao" style={{ fontWeight: 'bold', color: '#475569', cursor: 'pointer', fontSize: '14px', margin: 0 }}>Divide no cartão de crédito?</label>
+              <input type="checkbox" id="mostrarParcelamento" checked={mostrarParcelamento} onChange={(e) => setMostrarParcelamento(e.target.checked)} style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#4f46e5' }} />
+              <label htmlFor="mostrarParcelamento" style={{ fontWeight: '600', color: '#475569', cursor: 'pointer', fontSize: '14px', margin: 0 }}>Mostrar disponibilidade de parcelamento</label>
             </div>
 
-            {divideCartao && (
-              <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <label style={{ fontWeight: '600', color: '#475569', fontSize: '13px' }}>Número Máximo de Parcelas</label>
+            {mostrarParcelamento && (
+              <div style={{ marginLeft: '32px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <input 
                   type="number" 
                   value={maxParcelas} 
                   onChange={(e) => setMaxParcelas(e.target.value)} 
-                  placeholder="Digite o máximo de parcelas" 
-                  style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', width: '100%', maxWidth: '300px', boxSizing: 'border-box' }} 
+                  placeholder="Máx. de parcelas (ex: 12)" 
+                  style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', width: '100%', maxWidth: '250px', boxSizing: 'border-box' }} 
                 />
               </div>
             )}
-            
-            <div style={{ background: '#fffbeb', color: '#d97706', padding: '12px', borderRadius: '8px', border: '1px solid #fde68a', fontSize: '13px', display: 'flex', alignItems: 'flex-start', gap: '8px', marginTop: '4px' }}>
-              <Info size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
-              <span>Lembrete: Compras a prazo podem sofrer alteração de valor. Ao salvar, o catálogo exibirá a mensagem instruindo o cliente a consultar o vendedor para valores parcelados.</span>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px' }}>
+              <input type="checkbox" id="mostrarAvisoAcrescimo" checked={mostrarAvisoAcrescimo} onChange={(e) => setMostrarAvisoAcrescimo(e.target.checked)} style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#4f46e5' }} />
+              <label htmlFor="mostrarAvisoAcrescimo" style={{ fontWeight: '600', color: '#475569', cursor: 'pointer', fontSize: '14px', margin: 0 }}>Exibir aviso de acréscimo</label>
             </div>
+            
+            {mostrarAvisoAcrescimo && (
+              <div style={{ marginLeft: '32px', fontSize: '12px', color: '#64748b' }}>
+                Será exibido: <em>"Valores a prazo podem sofrer acréscimos. Consulte o vendedor."</em>
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '8px', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
@@ -555,13 +557,13 @@ export default function EditarProduto() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <input type="checkbox" id="destaque" checked={destaque} onChange={(e) => setDestaque(e.target.checked)} style={{ width: '24px', height: '24px', cursor: 'pointer', accentColor: '#4f46e5' }} />
               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <label htmlFor="destaque" style={{ fontWeight: 'bold', color: '#1e1b4b', cursor: 'pointer', fontSize: '15px', margin: 0 }}>Destacar na Vitrine (Kits e Eventos)</label>
+                <label htmlFor="destaque" style={{ fontWeight: 'bold', color: '#1e1b4b', cursor: 'pointer', fontSize: '15px', margin: 0 }}>Destacar na Vitrine</label>
               </div>
             </div>
             
             {destaque && (
               <div style={{ marginTop: '4px', paddingLeft: '36px' }}>
-                <label style={{ fontWeight: '600', color: '#475569', fontSize: '13px' }}>Nome da Seção (Ex: Dia dos Namorados)</label>
+                <label style={{ fontWeight: '600', color: '#475569', fontSize: '13px' }}>Nome da Seção</label>
                 
                 <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
                   <input 
