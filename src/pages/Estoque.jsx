@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Search, Plus, Edit2, Image as ImageIcon, Filter, FileDown, X, Settings, Trash2, CreditCard, AlertCircle, Star, Palette } from 'lucide-react'
+import { Search, Plus, Edit2, Image as ImageIcon, Filter, FileDown, X, Settings, Trash2, CreditCard, AlertCircle, Star, Palette, Eye, EyeOff } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import { collection, getDocs, doc, getDoc, updateDoc, setDoc } from 'firebase/firestore'
@@ -15,8 +15,11 @@ export default function Estoque() {
   const [produtoSelecionado, setProdutoSelecionado] = useState(null)
   
   const [categoriasFavoritas, setCategoriasFavoritas] = useState([])
+  const [categoriasOcultas, setCategoriasOcultas] = useState([])
+  const [catalogoOculto, setCatalogoOculto] = useState(false)
+  const [corPrincipal, setCorPrincipal] = useState('#db2777')
+  
   const [modalGerenciarCategorias, setModalGerenciarCategorias] = useState(false)
-
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
   useEffect(() => {
@@ -31,13 +34,18 @@ export default function Estoque() {
         const docRefLoja = doc(db, "configuracoes", "loja")
         const docSnapLoja = await getDoc(docRefLoja)
         if (docSnapLoja.exists()) {
-          setDadosLoja(prev => ({ ...prev, ...docSnapLoja.data() }))
+          const data = docSnapLoja.data()
+          setDadosLoja(prev => ({ ...prev, ...data }))
+          if (data.corPrincipal) setCorPrincipal(data.corPrincipal)
+          if (data.catalogoOculto !== undefined) setCatalogoOculto(data.catalogoOculto)
         }
         
         const docRefCat = doc(db, "configuracoes", "categorias")
         const docSnapCat = await getDoc(docRefCat)
-        if (docSnapCat.exists() && docSnapCat.data().favoritas) {
-          setCategoriasFavoritas(docSnapCat.data().favoritas)
+        if (docSnapCat.exists()) {
+          const data = docSnapCat.data()
+          if (data.favoritas) setCategoriasFavoritas(data.favoritas)
+          if (data.ocultas) setCategoriasOcultas(data.ocultas)
         }
       } catch (error) {
         console.error("Erro ao carregar dados:", error)
@@ -66,6 +74,12 @@ export default function Estoque() {
 
     buscarProdutosFirebase()
   }, [])
+
+  const hexToRgba = (hex, opacity) => {
+    let result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    if (!result) return `rgba(219, 39, 119, ${opacity})`; 
+    return `rgba(${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}, ${opacity})`;
+  }
 
   let catSet = new Set()
   produtos.forEach(p => {
@@ -185,8 +199,8 @@ export default function Estoque() {
     janelaImpressao.document.close()
   }
 
-  const pegarPrimeiraFoto = (produto) => {
-    if (produto.fotos && produto.fotos.length > 0) return produto.fotos[0]
+  const pegarPrimeiraFotoRecortada = (produto) => {
+    if (produto.fotos && produto.fotos.length > 0) return produto.fotos[0].recortada || produto.fotos[0]
     if (produto.imagem) return produto.imagem
     return null
   }
@@ -202,6 +216,23 @@ export default function Estoque() {
     }
     setCategoriasFavoritas(novasFavoritas)
     await setDoc(doc(db, "configuracoes", "categorias"), { favoritas: novasFavoritas }, { merge: true })
+  }
+
+  const toggleOcultarCategoria = async (cat) => {
+    let novasOcultas = [...categoriasOcultas]
+    if (novasOcultas.includes(cat)) {
+      novasOcultas = novasOcultas.filter(c => c !== cat)
+    } else {
+      novasOcultas.push(cat)
+    }
+    setCategoriasOcultas(novasOcultas)
+    await setDoc(doc(db, "configuracoes", "categorias"), { ocultas: novasOcultas }, { merge: true })
+  }
+
+  const handleToggleCatalogoOculto = async (e) => {
+    const valor = e.target.checked
+    setCatalogoOculto(valor)
+    await setDoc(doc(db, "configuracoes", "loja"), { catalogoOculto: valor }, { merge: true })
   }
 
   const renomearCategoria = async (nomeAntigo) => {
@@ -232,6 +263,13 @@ export default function Estoque() {
         novasFavoritas = novasFavoritas.map(c => c === nomeAntigo ? novoNome.trim() : c)
         setCategoriasFavoritas(novasFavoritas)
         await setDoc(doc(db, "configuracoes", "categorias"), { favoritas: novasFavoritas }, { merge: true })
+      }
+
+      let novasOcultas = [...categoriasOcultas]
+      if (novasOcultas.includes(nomeAntigo)) {
+        novasOcultas = novasOcultas.map(c => c === nomeAntigo ? novoNome.trim() : c)
+        setCategoriasOcultas(novasOcultas)
+        await setDoc(doc(db, "configuracoes", "categorias"), { ocultas: novasOcultas }, { merge: true })
       }
       
       const pSnapshot = await getDocs(collection(db, "produtos"))
@@ -267,7 +305,10 @@ export default function Estoque() {
       
       let novasFavoritas = categoriasFavoritas.filter(c => c !== nomeExcluir)
       setCategoriasFavoritas(novasFavoritas)
-      await setDoc(doc(db, "configuracoes", "categorias"), { favoritas: novasFavoritas }, { merge: true })
+      let novasOcultas = categoriasOcultas.filter(c => c !== nomeExcluir)
+      setCategoriasOcultas(novasOcultas)
+
+      await setDoc(doc(db, "configuracoes", "categorias"), { favoritas: novasFavoritas, ocultas: novasOcultas }, { merge: true })
       
       const pSnapshot = await getDocs(collection(db, "produtos"))
       setProdutos(pSnapshot.docs.map(d => ({ id: d.id, ...d.data() })))
@@ -285,18 +326,31 @@ export default function Estoque() {
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.8)', zIndex: 6000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={() => setModalGerenciarCategorias(false)}>
           <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '500px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', padding: '24px' }} onClick={e => e.stopPropagation()}>
             <h2 style={{ fontSize: '20px', color: '#1e1b4b', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px', marginTop: 0 }}>
-              <Settings size={24} color="#4f46e5" /> Gerenciar Categorias
+              <Settings size={24} color={corPrincipal} /> Gerenciar Categorias
             </h2>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: catalogoOculto ? '#fee2e2' : '#f8fafc', padding: '16px', borderRadius: '12px', border: `1px solid ${catalogoOculto ? '#ef4444' : '#e2e8f0'}`, marginBottom: '16px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontWeight: 'bold', color: catalogoOculto ? '#b91c1c' : '#1e1b4b' }}>Ocultar Todo o Catálogo</span>
+                <span style={{ fontSize: '12px', color: catalogoOculto ? '#ef4444' : '#64748b' }}>Ative para esconder todos os produtos da visão do cliente.</span>
+              </div>
+              <input type="checkbox" checked={catalogoOculto} onChange={handleToggleCatalogoOculto} style={{ width: '24px', height: '24px', accentColor: '#ef4444', cursor: 'pointer' }} />
+            </div>
             
-            <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingRight: '4px' }}>
               {listaGerenciavel.map((cat) => {
                 const isFav = categoriasFavoritas.includes(cat);
+                const isOculta = categoriasOcultas.includes(cat);
+
                 return (
-                  <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: isFav ? '#fffbeb' : '#f8fafc', padding: '12px', borderRadius: '8px', border: isFav ? '1px solid #fde68a' : '1px solid #e2e8f0', flexWrap: 'wrap', gap: '12px' }}>
-                    <span style={{ fontWeight: 'bold', color: isFav ? '#b45309' : '#1e1b4b', wordBreak: 'break-all' }}>{cat}</span>
+                  <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: isOculta ? '#f1f5f9' : (isFav ? hexToRgba(corPrincipal, 0.05) : '#f8fafc'), padding: '12px', borderRadius: '8px', border: isFav && !isOculta ? `1px solid ${corPrincipal}` : '1px solid #e2e8f0', flexWrap: 'wrap', gap: '12px', opacity: isOculta ? 0.6 : 1, transition: '0.2s' }}>
+                    <span style={{ fontWeight: 'bold', color: isOculta ? '#94a3b8' : (isFav ? corPrincipal : '#1e1b4b'), wordBreak: 'break-all', textDecoration: isOculta ? 'line-through' : 'none' }}>{cat}</span>
                     <div style={{ display: 'flex', gap: '6px' }}>
-                      <button onClick={() => toggleFavorita(cat)} style={{ background: isFav ? '#fef3c7' : 'white', border: isFav ? '1px solid #fcd34d' : '1px solid #cbd5e1', padding: '6px', borderRadius: '6px', cursor: 'pointer', color: isFav ? '#d97706' : '#94a3b8' }}>
-                        <Star size={16} fill={isFav ? '#d97706' : 'none'} />
+                      <button onClick={() => toggleOcultarCategoria(cat)} style={{ background: 'white', border: '1px solid #cbd5e1', padding: '6px', borderRadius: '6px', cursor: 'pointer', color: isOculta ? '#ef4444' : '#64748b' }}>
+                        {isOculta ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                      <button onClick={() => toggleFavorita(cat)} style={{ background: isFav ? hexToRgba(corPrincipal, 0.1) : 'white', border: isFav ? `1px solid ${corPrincipal}` : '1px solid #cbd5e1', padding: '6px', borderRadius: '6px', cursor: 'pointer', color: isFav ? corPrincipal : '#94a3b8' }}>
+                        <Star size={16} fill={isFav ? corPrincipal : 'none'} color={isFav ? corPrincipal : '#94a3b8'} />
                       </button>
                       <button onClick={() => renomearCategoria(cat)} style={{ background: '#e0e7ff', border: 'none', padding: '6px', borderRadius: '6px', cursor: 'pointer', color: '#4f46e5' }}><Edit2 size={16} /></button>
                       <button onClick={() => excluirCategoria(cat)} style={{ background: '#fee2e2', border: 'none', padding: '6px', borderRadius: '6px', cursor: 'pointer', color: '#ef4444' }}><Trash2 size={16} /></button>
@@ -331,7 +385,7 @@ export default function Estoque() {
                   return <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><ImageIcon size={48} color="#cbd5e1" /></div>
                 }
                 return fotosParaMostrar.map((foto, idx) => (
-                  <img key={idx} src={foto} alt={`Foto ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', flexShrink: 0, scrollSnapAlign: 'start' }} />
+                  <img key={idx} src={foto.recortada || foto} alt={`Foto ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', flexShrink: 0, scrollSnapAlign: 'start' }} />
                 ))
               })()}
             </div>
@@ -353,23 +407,23 @@ export default function Estoque() {
                     </span>
                   )}
                   <span style={{ fontSize: '24px', color: '#4f46e5', fontWeight: '900' }}>{formatoMoeda(produtoSelecionado.preco)}</span>
+                  
+                  {produtoSelecionado.mostrarParcelamento && produtoSelecionado.maxParcelas && Number(produtoSelecionado.maxParcelas) > 0 && (
+                     <span style={{ fontSize: '13px', color: '#64748b', fontWeight: 'bold', marginTop: '2px' }}>
+                       Cartão em até <span style={{ color: '#1e1b4b' }}>{produtoSelecionado.maxParcelas}x</span>
+                     </span>
+                  )}
                 </div>
                 <span style={{ background: produtoSelecionado.quantidade > 0 ? '#d1fae5' : '#fee2e2', color: produtoSelecionado.quantidade > 0 ? '#059669' : '#dc2626', padding: '6px 12px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold' }}>
                   {produtoSelecionado.quantidade > 0 ? `Estoque: ${produtoSelecionado.quantidade}` : 'Esgotado'}
                 </span>
               </div>
 
-              {produtoSelecionado.mostrarParcelamento && (
+              {produtoSelecionado.mostrarAvisoAcrescimo && (
                 <div style={{ background: '#fffbeb', padding: '12px', borderRadius: '8px', border: '1px solid #fde68a', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <span style={{ fontSize: '13px', color: '#d97706', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <CreditCard size={16} />
-                    Cartão {produtoSelecionado.maxParcelas ? `em até ${produtoSelecionado.maxParcelas}x` : ''}
+                  <span style={{ fontSize: '12px', color: '#b45309', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <AlertCircle size={14} /> Valores a prazo podem sofrer acréscimos.
                   </span>
-                  {produtoSelecionado.mostrarAvisoAcrescimo && (
-                    <span style={{ fontSize: '12px', color: '#b45309', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <AlertCircle size={14} /> Valores a prazo podem sofrer acréscimos.
-                    </span>
-                  )}
                 </div>
               )}
 
@@ -393,7 +447,7 @@ export default function Estoque() {
         <div style={{ display: 'flex', gap: '12px', width: isMobile ? '100%' : 'auto' }}>
           <button 
             onClick={() => navigate('/configuracoes', { state: { aba: 'catalogo' } })}
-            style={{ flex: isMobile ? 1 : 'none', justifyContent: 'center', background: 'white', color: '#db2777', border: '1px solid #e2e8f0', padding: '12px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
+            style={{ flex: isMobile ? 1 : 'none', justifyContent: 'center', background: 'white', color: corPrincipal, border: '1px solid #e2e8f0', padding: '12px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
           >
             <Palette size={18} /> Catálogo
           </button>
@@ -433,7 +487,7 @@ export default function Estoque() {
                 onClick={() => setCategoriaFiltro(cat)} 
                 style={{ padding: '10px 20px', borderRadius: '10px', background: categoriaFiltro === cat ? '#4f46e5' : '#f1f5f9', color: categoriaFiltro === cat ? 'white' : '#64748b', border: 'none', fontWeight: 'bold', cursor: 'pointer', flexShrink: 0, fontSize: '14px', whiteSpace: 'nowrap', transition: '0.2s', boxShadow: categoriaFiltro === cat ? '0 4px 6px rgba(79, 70, 229, 0.2)' : 'none', display: 'flex', alignItems: 'center', gap: '6px' }}
               >
-                {isFav && <Star size={14} fill={categoriaFiltro === cat ? 'white' : '#d97706'} color={categoriaFiltro === cat ? 'white' : '#d97706'} />}
+                {isFav && <Star size={14} fill={categoriaFiltro === cat ? 'white' : corPrincipal} color={categoriaFiltro === cat ? 'white' : corPrincipal} />}
                 {cat}
               </button>
             )
@@ -451,7 +505,7 @@ export default function Estoque() {
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '140px' : '240px'}, 1fr))`, gap: isMobile ? '12px' : '24px' }}>
           {produtosFiltrados.map((produto) => {
-            const fotoPrincipal = pegarPrimeiraFoto(produto)
+            const fotoPrincipal = pegarPrimeiraFotoRecortada(produto)
             const temDesconto = Number(produto.precoAntigo) > Number(produto.preco)
 
             return (

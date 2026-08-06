@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Save, CheckCircle, AlertCircle, UploadCloud, X, LayoutGrid, Plus, Star, CreditCard, Info } from 'lucide-react'
+import { ArrowLeft, Save, CheckCircle, AlertCircle, UploadCloud, X, LayoutGrid, Plus, Star, CreditCard, Info, Globe } from 'lucide-react'
 
 import { collection, addDoc, getDocs } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
@@ -38,6 +38,15 @@ export default function NovoProduto() {
   const [modalCategoriasAberta, setModalCategoriasAberta] = useState(false)
   const [modalEventosAberta, setModalEventosAberta] = useState(false)
 
+  // ESTADOS DO RECORTE DE IMAGEM
+  const [filaImagens, setFilaImagens] = useState([])
+  const [imgObj, setImgObj] = useState(null)
+  const [baseSize, setBaseSize] = useState({ w: 0, h: 0 })
+  const [posicao, setPosicao] = useState({ x: 0, y: 0 })
+  const [zoom, setZoom] = useState(1)
+  const [arrastando, setArrastando] = useState(false)
+  const [inicioArraste, setInicioArraste] = useState({ x: 0, y: 0 })
+
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768)
     window.addEventListener('resize', handleResize)
@@ -45,7 +54,6 @@ export default function NovoProduto() {
     const carregarListasDinamicas = async () => {
       try {
         const querySnapshot = await getDocs(collection(db, "produtos"))
-       
         let catSet = new Set()
         let evSet = new Set()
 
@@ -63,7 +71,6 @@ export default function NovoProduto() {
 
         setCategoriasLista([...catSet].sort((a, b) => a.localeCompare(b)))
         setEventosLista([...evSet].sort((a, b) => a.localeCompare(b)))
-
       } catch (error) {
         console.error("Erro ao carregar listas dinâmicas:", error)
       }
@@ -73,22 +80,95 @@ export default function NovoProduto() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
+  // GESTÃO DA FILA DE RECORTE
+  useEffect(() => {
+    if (filaImagens.length > 0 && !imgObj) {
+      const file = filaImagens[0]
+      const url = URL.createObjectURL(file)
+      const img = new Image()
+      img.onload = () => {
+        const coverRatio = Math.max(300 / img.width, 300 / img.height)
+        setBaseSize({ w: img.width * coverRatio, h: img.height * coverRatio })
+        setImgObj(img)
+        setPosicao({ x: 0, y: 0 })
+        setZoom(1)
+      }
+      img.src = url
+    }
+  }, [filaImagens, imgObj])
+
   const handleImagemChange = (e) => {
     const files = Array.from(e.target.files)
-    if (imagensPreviews.length + files.length > 5) {
+    if (imagensPreviews.length + filaImagens.length + files.length > 5) {
       setErro('Você pode adicionar no máximo 5 fotos por produto.')
       return
     }
-    files.forEach(file => {
-      const reader = new FileReader()
-      reader.onload = (event) => setImagensPreviews(prev => [...prev, event.target.result])
-      reader.readAsDataURL(file)
-    })
+    setFilaImagens(prev => [...prev, ...files])
+    e.target.value = null
     setErro('')
   }
 
   const removerImagem = (indexParaRemover) => {
     setImagensPreviews(prev => prev.filter((_, index) => index !== indexParaRemover))
+  }
+
+  const handleStartDrag = (clientX, clientY) => {
+    setArrastando(true)
+    setInicioArraste({ x: clientX - posicao.x, y: clientY - posicao.y })
+  }
+
+  const handleMoveDrag = (clientX, clientY) => {
+    if (!arrastando) return
+    setPosicao({ x: clientX - inicioArraste.x, y: clientY - inicioArraste.y })
+  }
+
+  const handleEndDrag = () => {
+    setArrastando(false)
+  }
+
+  const pularRecorte = () => {
+    setImgObj(null)
+    setFilaImagens(prev => prev.slice(1))
+  }
+
+  const salvarRecorte = () => {
+    // 1. Salvar Imagem Original (Comprimida para economizar espaço)
+    const canvasOrig = document.createElement('canvas')
+    let w = imgObj.width
+    let h = imgObj.height
+    const maxDim = 1200
+    if (w > h && w > maxDim) { h *= maxDim / w; w = maxDim }
+    else if (h > maxDim) { w *= maxDim / h; h = maxDim }
+    
+    canvasOrig.width = w
+    canvasOrig.height = h
+    const ctxOrig = canvasOrig.getContext('2d')
+    ctxOrig.fillStyle = '#ffffff'
+    ctxOrig.fillRect(0, 0, w, h)
+    ctxOrig.drawImage(imgObj, 0, 0, w, h)
+    const originalBase64 = canvasOrig.toDataURL('image/jpeg', 0.8)
+
+    // 2. Salvar Recorte Quadrado (500x500)
+    const canvasCrop = document.createElement('canvas')
+    canvasCrop.width = 500
+    canvasCrop.height = 500
+    const ctxCrop = canvasCrop.getContext('2d')
+    ctxCrop.fillStyle = '#ffffff'
+    ctxCrop.fillRect(0, 0, 500, 500)
+
+    const ratioCanvas = 500 / 300
+    const finalW = baseSize.w * zoom * ratioCanvas
+    const finalH = baseSize.h * zoom * ratioCanvas
+    
+    const dx = 250 - finalW / 2 + (posicao.x * ratioCanvas)
+    const dy = 250 - finalH / 2 + (posicao.y * ratioCanvas)
+    
+    ctxCrop.drawImage(imgObj, dx, dy, finalW, finalH)
+    const cropBase64 = canvasCrop.toDataURL('image/jpeg', 0.8)
+
+    setImagensPreviews(prev => [...prev, { original: originalBase64, recortada: cropBase64 }])
+    setImgObj(null)
+    setFilaImagens(prev => prev.slice(1))
   }
 
   const adicionarCategoria = (e) => {
@@ -111,45 +191,6 @@ export default function NovoProduto() {
     }
   }
 
-  const processarECompressarImagens = async () => {
-    const promessasDeCompressao = imagensPreviews.map(imagemSrc => {
-      return new Promise((resolve) => {
-        const img = new Image()
-        img.onload = () => {
-          const canvas = document.createElement('canvas')
-          const tamanhoMaximo = 500
-          let largura = img.width
-          let altura = img.height
-
-          if (largura > altura) {
-            if (largura > tamanhoMaximo) {
-              altura *= tamanhoMaximo / largura
-              largura = tamanhoMaximo
-            }
-          } else {
-            if (altura > tamanhoMaximo) {
-              largura *= tamanhoMaximo / altura
-              altura = tamanhoMaximo
-            }
-          }
-
-          canvas.width = largura
-          canvas.height = altura
-          const ctx = canvas.getContext('2d')
-          ctx.fillStyle = '#ffffff'
-          ctx.fillRect(0, 0, largura, altura)
-          ctx.drawImage(img, 0, 0, largura, altura)
-
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.6)
-          resolve(dataUrl)
-        }
-        img.src = imagemSrc
-      })
-    })
-
-    return Promise.all(promessasDeCompressao)
-  }
-
   const handleSalvar = async (e) => {
     e.preventDefault()
 
@@ -167,8 +208,6 @@ export default function NovoProduto() {
     setSalvando(true)
 
     try {
-      const arrayImagensComprimidas = await processarECompressarImagens()
-      
       const categoriaFallback = categoriasSelecionadas.length > 0 ? categoriasSelecionadas[0] : 'Sem Categoria'
 
       const produtoNovo = {
@@ -180,13 +219,13 @@ export default function NovoProduto() {
         precoAntigo: precoAntigo ? parseFloat(precoAntigo) : null,
         quantidade: quantidade === '' ? 0 : parseInt(quantidade, 10),
         descricao: descricao.trim(),
-        mostrarParcelamento: mostrarParcelamento,
-        maxParcelas: mostrarParcelamento && maxParcelas ? parseInt(maxParcelas, 10) : null,
-        mostrarAvisoAcrescimo: mostrarAvisoAcrescimo,
+        mostrarParcelamento: visivelCatalogo ? mostrarParcelamento : false,
+        maxParcelas: visivelCatalogo && mostrarParcelamento && maxParcelas ? parseInt(maxParcelas, 10) : null,
+        mostrarAvisoAcrescimo: visivelCatalogo ? mostrarAvisoAcrescimo : false,
         visivelCatalogo: visivelCatalogo,
-        destaque: destaque,
-        nomeDestaque: destaque ? nomeDestaque.trim() : null,
-        fotos: arrayImagensComprimidas,
+        destaque: visivelCatalogo ? destaque : false,
+        nomeDestaque: visivelCatalogo && destaque ? nomeDestaque.trim() : null,
+        fotos: imagensPreviews,
         dataCadastro: new Date().toISOString()
       }
 
@@ -231,6 +270,48 @@ export default function NovoProduto() {
   return (
     <div style={{ maxWidth: '900px', display: 'flex', flexDirection: 'column', gap: '24px', paddingBottom: '40px', boxSizing: 'border-box', width: '100%' }}>
      
+      {/* MODAL DE RECORTE DE IMAGEM */}
+      {filaImagens.length > 0 && imgObj && (
+        <div 
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.9)', zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px', userSelect: 'none' }}
+          onMouseUp={handleEndDrag} onMouseLeave={handleEndDrag} onTouchEnd={handleEndDrag}
+        >
+          <div style={{ background: 'white', padding: '24px', borderRadius: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', width: '100%', maxWidth: '400px' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: 0, color: '#1e1b4b', fontSize: '18px' }}>Ajustar Foto ({imagensPreviews.length + 1})</h3>
+            <p style={{ margin: 0, fontSize: '13px', color: '#64748b', textAlign: 'center' }}>Arraste a imagem para enquadrar no quadrado e use o zoom. A foto original sem cortes será preservada ao expandir no catálogo.</p>
+            
+            <div 
+              onMouseDown={(e) => handleStartDrag(e.clientX, e.clientY)}
+              onTouchStart={(e) => handleStartDrag(e.touches[0].clientX, e.touches[0].clientY)}
+              onMouseMove={(e) => handleMoveDrag(e.clientX, e.clientY)}
+              onTouchMove={(e) => handleMoveDrag(e.touches[0].clientX, e.touches[0].clientY)}
+              style={{ width: '300px', height: '300px', background: '#f1f5f9', border: '2px dashed #cbd5e1', borderRadius: '12px', overflow: 'hidden', position: 'relative', cursor: arrastando ? 'grabbing' : 'grab', touchAction: 'none' }}
+            >
+              <img 
+                src={imgObj.src} 
+                alt="Recorte" 
+                draggable={false}
+                style={{ 
+                  position: 'absolute', left: '50%', top: '50%', width: baseSize.w, height: baseSize.h, 
+                  transform: `translate(calc(-50% + ${posicao.x}px), calc(-50% + ${posicao.y}px)) scale(${zoom})`,
+                  pointerEvents: 'none' 
+                }} 
+              />
+            </div>
+
+            <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#64748b' }}>Zoom</span>
+              <input type="range" min="1" max="3" step="0.1" value={zoom} onChange={e => setZoom(parseFloat(e.target.value))} style={{ flex: 1, accentColor: '#4f46e5' }} />
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', width: '100%', marginTop: '8px' }}>
+              <button type="button" onClick={pularRecorte} style={{ flex: 1, background: 'transparent', border: '1px solid #cbd5e1', color: '#475569', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Cancelar</button>
+              <button type="button" onClick={salvarRecorte} style={{ flex: 2, background: '#4f46e5', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Confirmar Recorte</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {modalCategoriasAberta && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', zIndex: 5000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => setModalCategoriasAberta(false)}>
           <div style={{ background: 'white', width: '100%', maxWidth: '600px', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '24px', display: 'flex', flexDirection: 'column', maxHeight: '70vh', boxShadow: '0 -10px 25px rgba(0,0,0,0.1)' }} onClick={e => e.stopPropagation()}>
@@ -358,9 +439,9 @@ export default function NovoProduto() {
           </div>
           {imagensPreviews.length > 0 && (
             <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '10px' }}>
-              {imagensPreviews.map((src, index) => (
+              {imagensPreviews.map((srcObj, index) => (
                 <div key={index} style={{ position: 'relative', width: '80px', height: '80px', flexShrink: 0, borderRadius: '8px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
-                  <img src={src} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <img src={srcObj.recortada || srcObj} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover', background: 'white' }} />
                   <button type="button" onClick={() => removerImagem(index)} style={{ position: 'absolute', top: '4px', right: '4px', background: 'rgba(0,0,0,0.6)', color: 'white', border: 'none', borderRadius: '50%', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}><X size={14} /></button>
                 </div>
               ))}
@@ -438,78 +519,73 @@ export default function NovoProduto() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <h3 style={{ fontSize: '15px', color: '#1e1b4b', margin: '0 0 4px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <CreditCard size={18} color="#db2777" /> Exibição de Parcelamento (Catálogo)
+          <div style={{ background: '#f8fafc', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <h3 style={{ fontSize: '16px', color: '#1e1b4b', margin: '0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Globe size={20} color="#db2777" /> 🌐 Configurações do Catálogo
             </h3>
             
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <input type="checkbox" id="mostrarParcelamento" checked={mostrarParcelamento} onChange={(e) => setMostrarParcelamento(e.target.checked)} style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#db2777' }} />
-              <label htmlFor="mostrarParcelamento" style={{ fontWeight: '600', color: '#475569', cursor: 'pointer', fontSize: '14px', margin: 0 }}>Mostrar disponibilidade de parcelamento</label>
-            </div>
-
-            {mostrarParcelamento && (
-              <div style={{ marginLeft: '32px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <input 
-                  type="number" 
-                  value={maxParcelas} 
-                  onChange={(e) => setMaxParcelas(e.target.value)} 
-                  placeholder="Máx. de parcelas (ex: 12)" 
-                  style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', width: '100%', maxWidth: '250px', boxSizing: 'border-box' }} 
-                />
-              </div>
-            )}
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px' }}>
-              <input type="checkbox" id="mostrarAvisoAcrescimo" checked={mostrarAvisoAcrescimo} onChange={(e) => setMostrarAvisoAcrescimo(e.target.checked)} style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#db2777' }} />
-              <label htmlFor="mostrarAvisoAcrescimo" style={{ fontWeight: '600', color: '#475569', cursor: 'pointer', fontSize: '14px', margin: 0 }}>Exibir aviso de acréscimo</label>
-            </div>
-            
-            {mostrarAvisoAcrescimo && (
-              <div style={{ marginLeft: '32px', fontSize: '12px', color: '#64748b' }}>
-                Será exibido: <em>"Valores a prazo podem sofrer acréscimos. Consulte o vendedor."</em>
-              </div>
-            )}
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '8px', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-           
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
               <input type="checkbox" id="visivelCatalogo" checked={visivelCatalogo} onChange={(e) => setVisivelCatalogo(e.target.checked)} style={{ width: '24px', height: '24px', cursor: 'pointer', accentColor: '#db2777' }} />
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 <label htmlFor="visivelCatalogo" style={{ fontWeight: 'bold', color: '#1e1b4b', cursor: 'pointer', fontSize: '15px', margin: 0 }}>Exibir no Catálogo Online</label>
-                <span style={{ fontSize: '13px', color: '#64748b' }}>Desmarque para manter o produto apenas no sistema gerencial.</span>
+                <span style={{ fontSize: '13px', color: '#64748b' }}>Desmarque para esconder o produto da vitrine do cliente.</span>
               </div>
             </div>
 
-            <div style={{ width: '100%', height: '1px', background: '#e2e8f0', margin: '4px 0' }}></div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <input type="checkbox" id="destaque" checked={destaque} onChange={(e) => setDestaque(e.target.checked)} style={{ width: '24px', height: '24px', cursor: 'pointer', accentColor: '#db2777' }} />
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <label htmlFor="destaque" style={{ fontWeight: 'bold', color: '#1e1b4b', cursor: 'pointer', fontSize: '15px', margin: 0 }}>Destacar na Vitrine</label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', opacity: visivelCatalogo ? 1 : 0.4, pointerEvents: visivelCatalogo ? 'auto' : 'none', transition: '0.3s', borderTop: '1px dashed #cbd5e1', paddingTop: '16px' }}>
+              
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <input type="checkbox" id="destaque" checked={destaque} onChange={(e) => setDestaque(e.target.checked)} style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#db2777' }} />
+                <label htmlFor="destaque" style={{ fontWeight: 'bold', color: '#1e1b4b', cursor: 'pointer', fontSize: '14px', margin: 0 }}>Destacar em Vitrine Especial (Kits, Eventos)</label>
               </div>
-            </div>
-           
-            {destaque && (
-              <div style={{ marginTop: '4px', paddingLeft: '36px' }}>
-                <label style={{ fontWeight: '600', color: '#475569', fontSize: '13px' }}>Nome da Seção</label>
-                
-                <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-                  <input
-                    type="text"
-                    value={nomeDestaque}
-                    onChange={(e) => setNomeDestaque(e.target.value)}
-                    placeholder="Digite o nome da vitrine..."
-                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', boxSizing: 'border-box' }}
-                  />
-                  <button type="button" onClick={() => setModalEventosAberta(true)} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569' }}>
-                    <LayoutGrid size={20} />
-                  </button>
+            
+              {destaque && (
+                <div style={{ marginLeft: '32px', marginTop: '-8px' }}>
+                  <label style={{ fontWeight: '600', color: '#475569', fontSize: '13px' }}>Nome da Seção (Ex: Dia dos Namorados)</label>
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                    <input
+                      type="text"
+                      value={nomeDestaque}
+                      onChange={(e) => setNomeDestaque(e.target.value)}
+                      placeholder="Digite o nome da vitrine..."
+                      style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', boxSizing: 'border-box' }}
+                    />
+                    <button type="button" onClick={() => setModalEventosAberta(true)} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569' }}>
+                      <LayoutGrid size={20} />
+                    </button>
+                  </div>
                 </div>
+              )}
 
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <input type="checkbox" id="mostrarParcelamento" checked={mostrarParcelamento} onChange={(e) => setMostrarParcelamento(e.target.checked)} style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#db2777' }} />
+                <label htmlFor="mostrarParcelamento" style={{ fontWeight: 'bold', color: '#1e1b4b', cursor: 'pointer', fontSize: '14px', margin: 0 }}>Mostrar opção de parcelamento no cartão</label>
               </div>
-            )}
+
+              {mostrarParcelamento && (
+                <div style={{ marginLeft: '32px', marginTop: '-8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <input 
+                    type="number" 
+                    value={maxParcelas} 
+                    onChange={(e) => setMaxParcelas(e.target.value)} 
+                    placeholder="Máx. de parcelas (ex: 12)" 
+                    style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', width: '100%', maxWidth: '250px', boxSizing: 'border-box' }} 
+                  />
+                </div>
+              )}
+              
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <input type="checkbox" id="mostrarAvisoAcrescimo" checked={mostrarAvisoAcrescimo} onChange={(e) => setMostrarAvisoAcrescimo(e.target.checked)} style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#db2777' }} />
+                <label htmlFor="mostrarAvisoAcrescimo" style={{ fontWeight: 'bold', color: '#1e1b4b', cursor: 'pointer', fontSize: '14px', margin: 0 }}>Exibir aviso sobre acréscimo</label>
+              </div>
+              
+              {mostrarAvisoAcrescimo && (
+                <div style={{ marginLeft: '32px', marginTop: '-8px', fontSize: '12px', color: '#64748b' }}>
+                  O cliente verá a mensagem: <em>"Valores a prazo podem sofrer acréscimos. Consulte o vendedor."</em>
+                </div>
+              )}
+
+            </div>
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px', width: '100%' }}>
