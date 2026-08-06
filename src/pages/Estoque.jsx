@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Search, Plus, Edit2, Image as ImageIcon, Filter, FileDown, X, Settings, ArrowUp, ArrowDown, Trash2, CreditCard, AlertCircle } from 'lucide-react'
+import { Search, Plus, Edit2, Image as ImageIcon, Filter, FileDown, X, Settings, Trash2, CreditCard, AlertCircle, Star } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import { collection, getDocs, doc, getDoc, updateDoc, setDoc } from 'firebase/firestore'
@@ -14,7 +14,7 @@ export default function Estoque() {
   const [carregando, setCarregando] = useState(true)
   const [produtoSelecionado, setProdutoSelecionado] = useState(null)
   
-  const [ordemCategorias, setOrdemCategorias] = useState([])
+  const [categoriasFavoritas, setCategoriasFavoritas] = useState([])
   const [modalGerenciarCategorias, setModalGerenciarCategorias] = useState(false)
 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
@@ -36,8 +36,8 @@ export default function Estoque() {
         
         const docRefCat = doc(db, "configuracoes", "categorias")
         const docSnapCat = await getDoc(docRefCat)
-        if (docSnapCat.exists() && docSnapCat.data().ordem) {
-          setOrdemCategorias(docSnapCat.data().ordem)
+        if (docSnapCat.exists() && docSnapCat.data().favoritas) {
+          setCategoriasFavoritas(docSnapCat.data().favoritas)
         }
       } catch (error) {
         console.error("Erro ao carregar dados:", error)
@@ -77,11 +77,11 @@ export default function Estoque() {
   })
   
   const catArray = Array.from(catSet)
-  const ordenadas = ordemCategorias.filter(c => catArray.includes(c))
-  const restantes = catArray.filter(c => !ordemCategorias.includes(c)).sort((a, b) => a.localeCompare(b))
+  const favs = catArray.filter(c => categoriasFavoritas.includes(c)).sort((a, b) => a.localeCompare(b))
+  const others = catArray.filter(c => !categoriasFavoritas.includes(c)).sort((a, b) => a.localeCompare(b))
   
-  const categoriasUnicas = ['Todas', 'Promoções', ...ordenadas, ...restantes]
-  const listaGerenciavel = categoriasUnicas.filter(c => c !== 'Todas' && c !== 'Promoções')
+  const categoriasUnicas = ['Todas', 'Promoções', ...favs, ...others]
+  const listaGerenciavel = [...favs, ...others]
 
   const produtosFiltrados = produtos.filter(produto => {
     const termoBusca = busca.toLowerCase()
@@ -193,15 +193,15 @@ export default function Estoque() {
 
   const formatoMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(valor) || 0)
 
-  const moverCategoria = async (index, direcao) => {
-    let novaOrdem = [...listaGerenciavel]
-    if (direcao === 'up' && index > 0) {
-      [novaOrdem[index - 1], novaOrdem[index]] = [novaOrdem[index], novaOrdem[index - 1]]
-    } else if (direcao === 'down' && index < novaOrdem.length - 1) {
-      [novaOrdem[index + 1], novaOrdem[index]] = [novaOrdem[index], novaOrdem[index + 1]]
+  const toggleFavorita = async (cat) => {
+    let novasFavoritas = [...categoriasFavoritas]
+    if (novasFavoritas.includes(cat)) {
+      novasFavoritas = novasFavoritas.filter(c => c !== cat)
+    } else {
+      novasFavoritas.push(cat)
     }
-    setOrdemCategorias(novaOrdem)
-    await setDoc(doc(db, "configuracoes", "categorias"), { ordem: novaOrdem }, { merge: true })
+    setCategoriasFavoritas(novasFavoritas)
+    await setDoc(doc(db, "configuracoes", "categorias"), { favoritas: novasFavoritas }, { merge: true })
   }
 
   const renomearCategoria = async (nomeAntigo) => {
@@ -227,9 +227,12 @@ export default function Estoque() {
         }
       }
       
-      const novaOrdem = listaGerenciavel.map(c => c === nomeAntigo ? novoNome.trim() : c)
-      setOrdemCategorias(novaOrdem)
-      await setDoc(doc(db, "configuracoes", "categorias"), { ordem: novaOrdem }, { merge: true })
+      let novasFavoritas = [...categoriasFavoritas]
+      if (novasFavoritas.includes(nomeAntigo)) {
+        novasFavoritas = novasFavoritas.map(c => c === nomeAntigo ? novoNome.trim() : c)
+        setCategoriasFavoritas(novasFavoritas)
+        await setDoc(doc(db, "configuracoes", "categorias"), { favoritas: novasFavoritas }, { merge: true })
+      }
       
       const pSnapshot = await getDocs(collection(db, "produtos"))
       setProdutos(pSnapshot.docs.map(d => ({ id: d.id, ...d.data() })))
@@ -262,9 +265,9 @@ export default function Estoque() {
         }
       }
       
-      const novaOrdem = listaGerenciavel.filter(c => c !== nomeExcluir)
-      setOrdemCategorias(novaOrdem)
-      await setDoc(doc(db, "configuracoes", "categorias"), { ordem: novaOrdem }, { merge: true })
+      let novasFavoritas = categoriasFavoritas.filter(c => c !== nomeExcluir)
+      setCategoriasFavoritas(novasFavoritas)
+      await setDoc(doc(db, "configuracoes", "categorias"), { favoritas: novasFavoritas }, { merge: true })
       
       const pSnapshot = await getDocs(collection(db, "produtos"))
       setProdutos(pSnapshot.docs.map(d => ({ id: d.id, ...d.data() })))
@@ -286,17 +289,21 @@ export default function Estoque() {
             </h2>
             
             <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {listaGerenciavel.map((cat, idx) => (
-                <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', flexWrap: 'wrap', gap: '12px' }}>
-                  <span style={{ fontWeight: 'bold', color: '#1e1b4b', wordBreak: 'break-all' }}>{cat}</span>
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <button onClick={() => moverCategoria(idx, 'up')} disabled={idx === 0} style={{ background: 'white', border: '1px solid #cbd5e1', padding: '6px', borderRadius: '6px', cursor: idx === 0 ? 'not-allowed' : 'pointer', color: '#475569' }}><ArrowUp size={16} /></button>
-                    <button onClick={() => moverCategoria(idx, 'down')} disabled={idx === listaGerenciavel.length - 1} style={{ background: 'white', border: '1px solid #cbd5e1', padding: '6px', borderRadius: '6px', cursor: idx === listaGerenciavel.length - 1 ? 'not-allowed' : 'pointer', color: '#475569' }}><ArrowDown size={16} /></button>
-                    <button onClick={() => renomearCategoria(cat)} style={{ background: '#e0e7ff', border: 'none', padding: '6px', borderRadius: '6px', cursor: 'pointer', color: '#4f46e5' }}><Edit2 size={16} /></button>
-                    <button onClick={() => excluirCategoria(cat)} style={{ background: '#fee2e2', border: 'none', padding: '6px', borderRadius: '6px', cursor: 'pointer', color: '#ef4444' }}><Trash2 size={16} /></button>
+              {listaGerenciavel.map((cat) => {
+                const isFav = categoriasFavoritas.includes(cat);
+                return (
+                  <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: isFav ? '#fffbeb' : '#f8fafc', padding: '12px', borderRadius: '8px', border: isFav ? '1px solid #fde68a' : '1px solid #e2e8f0', flexWrap: 'wrap', gap: '12px' }}>
+                    <span style={{ fontWeight: 'bold', color: isFav ? '#b45309' : '#1e1b4b', wordBreak: 'break-all' }}>{cat}</span>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button onClick={() => toggleFavorita(cat)} style={{ background: isFav ? '#fef3c7' : 'white', border: isFav ? '1px solid #fcd34d' : '1px solid #cbd5e1', padding: '6px', borderRadius: '6px', cursor: 'pointer', color: isFav ? '#d97706' : '#94a3b8' }}>
+                        <Star size={16} fill={isFav ? '#d97706' : 'none'} />
+                      </button>
+                      <button onClick={() => renomearCategoria(cat)} style={{ background: '#e0e7ff', border: 'none', padding: '6px', borderRadius: '6px', cursor: 'pointer', color: '#4f46e5' }}><Edit2 size={16} /></button>
+                      <button onClick={() => excluirCategoria(cat)} style={{ background: '#fee2e2', border: 'none', padding: '6px', borderRadius: '6px', cursor: 'pointer', color: '#ef4444' }}><Trash2 size={16} /></button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
               {listaGerenciavel.length === 0 && <p style={{ textAlign: 'center', color: '#64748b' }}>Nenhuma categoria disponível.</p>}
             </div>
             
@@ -356,7 +363,7 @@ export default function Estoque() {
                 <div style={{ background: '#fffbeb', padding: '12px', borderRadius: '8px', border: '1px solid #fde68a', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <span style={{ fontSize: '13px', color: '#d97706', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <CreditCard size={16} />
-                    Divide no Cartão {produtoSelecionado.maxParcelas ? `em até ${produtoSelecionado.maxParcelas}x` : ''}
+                    Cartão {produtoSelecionado.maxParcelas ? `em até ${produtoSelecionado.maxParcelas}x` : ''}
                   </span>
                   <span style={{ fontSize: '12px', color: '#b45309', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <AlertCircle size={14} /> Valores a prazo podem sofrer acréscimos.
@@ -410,15 +417,19 @@ export default function Estoque() {
         </div>
 
         <div style={{ display: 'flex', overflowX: 'auto', gap: '10px', paddingBottom: '8px', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch', width: '100%' }}>
-          {categoriasUnicas.map(cat => (
-            <button 
-              key={cat} 
-              onClick={() => setCategoriaFiltro(cat)} 
-              style={{ padding: '10px 20px', borderRadius: '10px', background: categoriaFiltro === cat ? '#4f46e5' : '#f1f5f9', color: categoriaFiltro === cat ? 'white' : '#64748b', border: 'none', fontWeight: 'bold', cursor: 'pointer', flexShrink: 0, fontSize: '14px', whiteSpace: 'nowrap', transition: '0.2s', boxShadow: categoriaFiltro === cat ? '0 4px 6px rgba(79, 70, 229, 0.2)' : 'none' }}
-            >
-              {cat}
-            </button>
-          ))}
+          {categoriasUnicas.map(cat => {
+            const isFav = categoriasFavoritas.includes(cat);
+            return (
+              <button 
+                key={cat} 
+                onClick={() => setCategoriaFiltro(cat)} 
+                style={{ padding: '10px 20px', borderRadius: '10px', background: categoriaFiltro === cat ? '#4f46e5' : '#f1f5f9', color: categoriaFiltro === cat ? 'white' : '#64748b', border: 'none', fontWeight: 'bold', cursor: 'pointer', flexShrink: 0, fontSize: '14px', whiteSpace: 'nowrap', transition: '0.2s', boxShadow: categoriaFiltro === cat ? '0 4px 6px rgba(79, 70, 229, 0.2)' : 'none', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                {isFav && <Star size={14} fill={categoriaFiltro === cat ? 'white' : '#d97706'} color={categoriaFiltro === cat ? 'white' : '#d97706'} />}
+                {cat}
+              </button>
+            )
+          })}
           <button onClick={() => setModalGerenciarCategorias(true)} style={{ padding: '10px 20px', borderRadius: '10px', background: '#e2e8f0', color: '#1e1b4b', border: 'none', fontWeight: 'bold', cursor: 'pointer', flexShrink: 0, fontSize: '14px', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '6px' }}>
             <Settings size={16} /> Gerenciar
           </button>
