@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Search, Filter, ShoppingCart, Plus, Minus, Trash2, CheckCircle, AlertCircle, Tag, UserCheck, X, Receipt, UserPlus, Image as ImageIcon, LayoutGrid } from 'lucide-react'
+import { Search, Filter, ShoppingCart, Plus, Minus, Trash2, CheckCircle, AlertCircle, Tag, UserCheck, X, Receipt, UserPlus, Image as ImageIcon, LayoutGrid, CreditCard } from 'lucide-react'
 
 import { collection, getDocs, addDoc, doc, updateDoc, getDoc } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
@@ -75,7 +75,6 @@ export default function Venda() {
     carregarDadosNuvem()
   }, [sucesso])
 
-  // Lógica inteligente de Preço Dinâmico (À vista x A prazo)
   const getPrecoItem = (item, formaPagamentoAtual) => {
     if (formaPagamentoAtual === 'Cartão de Crédito' || formaPagamentoAtual === 'Anotar (Fiado)') {
       return item.precoPrazo ? Number(item.precoPrazo) : Number(item.preco)
@@ -176,7 +175,6 @@ export default function Venda() {
     }
   }
 
-  // Usando o getPrecoItem para calcular o subtotal de acordo com a forma de pagamento selecionada
   const calcularSubtotal = () => {
     return carrinho.reduce((total, item) => total + (getPrecoItem(item, formaPagamento) * item.quantidadeComprada), 0)
   }
@@ -259,7 +257,7 @@ export default function Venda() {
         itens: carrinho.map(item => ({
           id: item.id,
           nome: item.nome,
-          preco: getPrecoItem(item, formaPagamento), // Salvando o preço aplicado real
+          preco: getPrecoItem(item, formaPagamento),
           quantidadeComprada: item.quantidadeComprada,
           categoria: item.categorias ? item.categorias.join(', ') : (item.categoria || 'Sem categoria')
         })),
@@ -306,14 +304,7 @@ export default function Venda() {
   }
 
   return (
-    <div style={{ 
-      display: 'flex', 
-      flexDirection: isMobile ? 'column' : 'row', 
-      gap: isMobile ? '16px' : '32px', 
-      height: isMobile ? 'auto' : 'calc(100vh - 80px)', 
-      overflowY: isMobile ? 'visible' : 'hidden',
-      position: 'relative' 
-    }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', position: 'relative' }}>
       
       {sucesso && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 3000, padding: '20px' }}>
@@ -325,7 +316,6 @@ export default function Venda() {
         </div>
       )}
 
-      {/* MODAL DE TODAS AS CATEGORIAS NO MOBILE */}
       {modalCategoriasAberta && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.8)', zIndex: 5000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => setModalCategoriasAberta(false)}>
           <div style={{ background: 'white', width: '100%', maxWidth: '600px', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '24px', display: 'flex', flexDirection: 'column', maxHeight: '70vh', boxShadow: '0 -10px 25px rgba(0,0,0,0.1)' }} onClick={e => e.stopPropagation()}>
@@ -368,7 +358,6 @@ export default function Venda() {
         </div>
       )}
 
-      {/* MODAL DE DETALHES DO PRODUTO */}
       {produtoSelecionado && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 4000, padding: '20px' }} onClick={() => setProdutoSelecionado(null)}>
           <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '400px', overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }} onClick={(e) => e.stopPropagation()}>
@@ -410,19 +399,23 @@ export default function Venda() {
                     </span>
                   )}
                   <span style={{ fontSize: '24px', color: '#4f46e5', fontWeight: '900' }}>{formatoMoeda(produtoSelecionado.preco)}</span>
-                  
-                  {/* PREÇO A PRAZO ADICIONADO AQUI */}
-                  {produtoSelecionado.precoPrazo && Number(produtoSelecionado.precoPrazo) > 0 && (
-                     <span style={{ fontSize: '13px', color: '#64748b', fontWeight: 'bold', marginTop: '2px' }}>
-                       A prazo: <span style={{ color: '#1e1b4b' }}>{formatoMoeda(produtoSelecionado.precoPrazo)}</span>
-                     </span>
-                  )}
-
                 </div>
                 <span style={{ background: produtoSelecionado.quantidade > 0 ? '#d1fae5' : '#fee2e2', color: produtoSelecionado.quantidade > 0 ? '#059669' : '#dc2626', padding: '6px 12px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold' }}>
                   {produtoSelecionado.quantidade > 0 ? `Estoque: ${produtoSelecionado.quantidade}` : 'Esgotado'}
                 </span>
               </div>
+
+              {produtoSelecionado.divideCartao && (
+                <div style={{ background: '#fffbeb', padding: '12px', borderRadius: '8px', border: '1px solid #fde68a', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ fontSize: '13px', color: '#d97706', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <CreditCard size={16} />
+                    Divide no Cartão {produtoSelecionado.maxParcelas ? `em até ${produtoSelecionado.maxParcelas}x` : ''}
+                  </span>
+                  <span style={{ fontSize: '12px', color: '#b45309', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <AlertCircle size={14} /> Valores a prazo podem sofrer acréscimos.
+                  </span>
+                </div>
+              )}
 
               <div>
                 <h4 style={{ fontSize: '13px', color: '#475569', fontWeight: 'bold', margin: '0 0 6px 0' }}>Descrição</h4>
@@ -450,7 +443,6 @@ export default function Venda() {
 
         {erro && <div style={{ background: '#fee2e2', color: '#ef4444', padding: '16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '500' }}><AlertCircle size={20} />{erro}</div>}
 
-        {/* BARRA DE PESQUISA PRIMEIRO */}
         <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexDirection: isMobile ? 'column' : 'row' }}>
           <div style={{ display: 'flex', alignItems: 'center', background: 'white', padding: '10px 16px', borderRadius: '12px', width: '100%', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
             <Search size={20} color="#64748b" />
@@ -458,7 +450,6 @@ export default function Venda() {
           </div>
         </div>
 
-        {/* BARRA DE CATEGORIAS COM CORREÇÃO VISUAL PARA NÃO SER COBERTA */}
         <div style={{ display: 'flex', overflowX: 'auto', gap: '10px', paddingBottom: '16px', marginBottom: '16px', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch', position: 'relative', zIndex: 10, flexShrink: 0 }}>
           {categoriasExibidas.map(cat => (
             <button 
@@ -507,7 +498,6 @@ export default function Venda() {
           )}
         </div>
 
-        {/* GRID DE PRODUTOS */}
         <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '140px' : '200px'}, 1fr))`, gap: '16px' }}>
           {produtosFiltrados.map((produto) => {
             const fotoPrincipal = pegarPrimeiraFoto(produto)
@@ -581,7 +571,6 @@ export default function Venda() {
                 <div style={{ flex: 1, minWidth: isMobile ? '100%' : 0 }}>
                   <p style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: '0' }}>{item.nome}</p>
                   
-                  {/* PREÇO MOSTRADO AQUI DEPENDE DA FORMA DE PAGAMENTO */}
                   <p style={{ fontSize: '13px', color: '#4f46e5', fontWeight: '600', margin: '4px 0 0 0' }}>
                     {formatoMoeda(getPrecoItem(item, formaPagamento))}
                   </p>

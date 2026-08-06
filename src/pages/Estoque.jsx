@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Search, Plus, Edit2, Image as ImageIcon, Filter, FileDown, X } from 'lucide-react'
+import { Search, Plus, Edit2, Image as ImageIcon, Filter, FileDown, X, Settings, ArrowUp, ArrowDown, Trash2, CreditCard, AlertCircle } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore'
+import { collection, getDocs, doc, getDoc, updateDoc, setDoc } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
 
 export default function Estoque() {
@@ -13,6 +13,9 @@ export default function Estoque() {
   const [dadosLoja, setDadosLoja] = useState({ nomeLoja: 'Storefy', ceo: 'Administrador', telefone: '-', email: '-', endereco: 'Endereço não informado' })
   const [carregando, setCarregando] = useState(true)
   const [produtoSelecionado, setProdutoSelecionado] = useState(null)
+  
+  const [ordemCategorias, setOrdemCategorias] = useState([])
+  const [modalGerenciarCategorias, setModalGerenciarCategorias] = useState(false)
 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
@@ -22,7 +25,6 @@ export default function Estoque() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  // ================= CARREGAR DADOS DA LOJA =================
   useEffect(() => {
     const carregarConfiguracoesNuvem = async () => {
       try {
@@ -31,8 +33,14 @@ export default function Estoque() {
         if (docSnapLoja.exists()) {
           setDadosLoja(prev => ({ ...prev, ...docSnapLoja.data() }))
         }
+        
+        const docRefCat = doc(db, "configuracoes", "categorias")
+        const docSnapCat = await getDoc(docRefCat)
+        if (docSnapCat.exists() && docSnapCat.data().ordem) {
+          setOrdemCategorias(docSnapCat.data().ordem)
+        }
       } catch (error) {
-        console.error("Erro ao carregar dados da loja:", error)
+        console.error("Erro ao carregar dados:", error)
       }
     }
     carregarConfiguracoesNuvem()
@@ -59,7 +67,6 @@ export default function Estoque() {
     buscarProdutosFirebase()
   }, [])
 
-  // Extrair categorias corretamente (suportando múltiplas)
   let catSet = new Set()
   produtos.forEach(p => {
     if (p.categorias && Array.isArray(p.categorias)) {
@@ -68,7 +75,13 @@ export default function Estoque() {
       catSet.add(p.categoria)
     }
   })
-  const categoriasUnicas = ['Todas', 'Promoções', ...Array.from(catSet).sort((a, b) => a.localeCompare(b))]
+  
+  const catArray = Array.from(catSet)
+  const ordenadas = ordemCategorias.filter(c => catArray.includes(c))
+  const restantes = catArray.filter(c => !ordemCategorias.includes(c)).sort((a, b) => a.localeCompare(b))
+  
+  const categoriasUnicas = ['Todas', 'Promoções', ...ordenadas, ...restantes]
+  const listaGerenciavel = categoriasUnicas.filter(c => c !== 'Todas' && c !== 'Promoções')
 
   const produtosFiltrados = produtos.filter(produto => {
     const termoBusca = busca.toLowerCase()
@@ -180,10 +193,118 @@ export default function Estoque() {
 
   const formatoMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(valor) || 0)
 
+  const moverCategoria = async (index, direcao) => {
+    let novaOrdem = [...listaGerenciavel]
+    if (direcao === 'up' && index > 0) {
+      [novaOrdem[index - 1], novaOrdem[index]] = [novaOrdem[index], novaOrdem[index - 1]]
+    } else if (direcao === 'down' && index < novaOrdem.length - 1) {
+      [novaOrdem[index + 1], novaOrdem[index]] = [novaOrdem[index], novaOrdem[index + 1]]
+    }
+    setOrdemCategorias(novaOrdem)
+    await setDoc(doc(db, "configuracoes", "categorias"), { ordem: novaOrdem }, { merge: true })
+  }
+
+  const renomearCategoria = async (nomeAntigo) => {
+    const novoNome = prompt(`Renomear "${nomeAntigo}" para:`, nomeAntigo)
+    if (!novoNome || novoNome.trim() === '' || novoNome === nomeAntigo) return
+    
+    setCarregando(true)
+    try {
+      const snapshot = await getDocs(collection(db, "produtos"))
+      for (let documento of snapshot.docs) {
+        const data = documento.data()
+        let mudou = false
+        let novasCats = data.categorias ? [...data.categorias] : []
+        if (novasCats.includes(nomeAntigo)) {
+          novasCats = novasCats.map(c => c === nomeAntigo ? novoNome.trim() : c)
+          mudou = true
+        }
+        let catUnica = data.categoria === nomeAntigo ? novoNome.trim() : data.categoria
+        if (data.categoria === nomeAntigo) mudou = true
+
+        if (mudou) {
+          await updateDoc(doc(db, "produtos", documento.id), { categorias: novasCats, categoria: catUnica })
+        }
+      }
+      
+      const novaOrdem = listaGerenciavel.map(c => c === nomeAntigo ? novoNome.trim() : c)
+      setOrdemCategorias(novaOrdem)
+      await setDoc(doc(db, "configuracoes", "categorias"), { ordem: novaOrdem }, { merge: true })
+      
+      const pSnapshot = await getDocs(collection(db, "produtos"))
+      setProdutos(pSnapshot.docs.map(d => ({ id: d.id, ...d.data() })))
+    } catch (error) {
+      console.error(error)
+    } finally {
+      setCarregando(false)
+    }
+  }
+
+  const excluirCategoria = async (nomeExcluir) => {
+    if (!window.confirm(`Atenção: Tem certeza que deseja remover a categoria "${nomeExcluir}" de todos os produtos do estoque?`)) return
+    
+    setCarregando(true)
+    try {
+      const snapshot = await getDocs(collection(db, "produtos"))
+      for (let documento of snapshot.docs) {
+        const data = documento.data()
+        let mudou = false
+        let novasCats = data.categorias ? data.categorias.filter(c => c !== nomeExcluir) : []
+        if (data.categorias && data.categorias.includes(nomeExcluir)) mudou = true
+        
+        if (novasCats.length === 0) novasCats = ['Sem Categoria']
+        
+        let catUnica = data.categoria === nomeExcluir ? 'Sem Categoria' : data.categoria
+        if (data.categoria === nomeExcluir) mudou = true
+
+        if (mudou) {
+          await updateDoc(doc(db, "produtos", documento.id), { categorias: novasCats, categoria: catUnica })
+        }
+      }
+      
+      const novaOrdem = listaGerenciavel.filter(c => c !== nomeExcluir)
+      setOrdemCategorias(novaOrdem)
+      await setDoc(doc(db, "configuracoes", "categorias"), { ordem: novaOrdem }, { merge: true })
+      
+      const pSnapshot = await getDocs(collection(db, "produtos"))
+      setProdutos(pSnapshot.docs.map(d => ({ id: d.id, ...d.data() })))
+    } catch (error) {
+      console.error(error)
+    } finally {
+      setCarregando(false)
+    }
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
-      {/* MODAL DE DETALHES DO PRODUTO */}
+      {modalGerenciarCategorias && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.8)', zIndex: 6000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={() => setModalGerenciarCategorias(false)}>
+          <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '500px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', padding: '24px' }} onClick={e => e.stopPropagation()}>
+            <h2 style={{ fontSize: '20px', color: '#1e1b4b', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px', marginTop: 0 }}>
+              <Settings size={24} color="#4f46e5" /> Gerenciar Categorias
+            </h2>
+            
+            <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {listaGerenciavel.map((cat, idx) => (
+                <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', flexWrap: 'wrap', gap: '12px' }}>
+                  <span style={{ fontWeight: 'bold', color: '#1e1b4b', wordBreak: 'break-all' }}>{cat}</span>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button onClick={() => moverCategoria(idx, 'up')} disabled={idx === 0} style={{ background: 'white', border: '1px solid #cbd5e1', padding: '6px', borderRadius: '6px', cursor: idx === 0 ? 'not-allowed' : 'pointer', color: '#475569' }}><ArrowUp size={16} /></button>
+                    <button onClick={() => moverCategoria(idx, 'down')} disabled={idx === listaGerenciavel.length - 1} style={{ background: 'white', border: '1px solid #cbd5e1', padding: '6px', borderRadius: '6px', cursor: idx === listaGerenciavel.length - 1 ? 'not-allowed' : 'pointer', color: '#475569' }}><ArrowDown size={16} /></button>
+                    <button onClick={() => renomearCategoria(cat)} style={{ background: '#e0e7ff', border: 'none', padding: '6px', borderRadius: '6px', cursor: 'pointer', color: '#4f46e5' }}><Edit2 size={16} /></button>
+                    <button onClick={() => excluirCategoria(cat)} style={{ background: '#fee2e2', border: 'none', padding: '6px', borderRadius: '6px', cursor: 'pointer', color: '#ef4444' }}><Trash2 size={16} /></button>
+                  </div>
+                </div>
+              ))}
+              {listaGerenciavel.length === 0 && <p style={{ textAlign: 'center', color: '#64748b' }}>Nenhuma categoria disponível.</p>}
+            </div>
+            
+            <button onClick={() => setModalGerenciarCategorias(false)} style={{ background: '#f1f5f9', color: '#475569', border: 'none', padding: '12px', borderRadius: '8px', marginTop: '20px', fontWeight: 'bold', cursor: 'pointer', width: '100%' }}>Fechar Janela</button>
+          </div>
+        </div>
+      )}
+
       {produtoSelecionado && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 4000, padding: '20px' }} onClick={() => setProdutoSelecionado(null)}>
           <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '400px', overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }} onClick={(e) => e.stopPropagation()}>
@@ -225,19 +346,23 @@ export default function Estoque() {
                     </span>
                   )}
                   <span style={{ fontSize: '24px', color: '#4f46e5', fontWeight: '900' }}>{formatoMoeda(produtoSelecionado.preco)}</span>
-                  
-                  {/* PREÇO A PRAZO ADICIONADO AQUI */}
-                  {produtoSelecionado.precoPrazo && Number(produtoSelecionado.precoPrazo) > 0 && (
-                     <span style={{ fontSize: '13px', color: '#64748b', fontWeight: 'bold', marginTop: '2px' }}>
-                       A prazo: <span style={{ color: '#1e1b4b' }}>{formatoMoeda(produtoSelecionado.precoPrazo)}</span>
-                     </span>
-                  )}
-
                 </div>
                 <span style={{ background: produtoSelecionado.quantidade > 0 ? '#d1fae5' : '#fee2e2', color: produtoSelecionado.quantidade > 0 ? '#059669' : '#dc2626', padding: '6px 12px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold' }}>
                   {produtoSelecionado.quantidade > 0 ? `Estoque: ${produtoSelecionado.quantidade}` : 'Esgotado'}
                 </span>
               </div>
+
+              {produtoSelecionado.divideCartao && (
+                <div style={{ background: '#fffbeb', padding: '12px', borderRadius: '8px', border: '1px solid #fde68a', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ fontSize: '13px', color: '#d97706', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <CreditCard size={16} />
+                    Divide no Cartão {produtoSelecionado.maxParcelas ? `em até ${produtoSelecionado.maxParcelas}x` : ''}
+                  </span>
+                  <span style={{ fontSize: '12px', color: '#b45309', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <AlertCircle size={14} /> Valores a prazo podem sofrer acréscimos.
+                  </span>
+                </div>
+              )}
 
               <div>
                 <h4 style={{ fontSize: '13px', color: '#475569', fontWeight: 'bold', margin: '0 0 6px 0' }}>Descrição</h4>
@@ -252,8 +377,8 @@ export default function Estoque() {
 
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', flexWrap: 'wrap', gap: '16px', flexDirection: isMobile ? 'column' : 'row' }}>
         <div>
-          <h1 style={{ fontSize: isMobile ? '24px' : '28px', color: '#1e1b4b' }}>Estoque</h1>
-          <p style={{ color: '#64748b', marginTop: '4px', fontSize: isMobile ? '14px' : '16px' }}>Gerencie seus produtos, preços e categorias</p>
+          <h1 style={{ fontSize: isMobile ? '24px' : '28px', color: '#1e1b4b', margin: 0 }}>Estoque</h1>
+          <p style={{ color: '#64748b', marginTop: '4px', margin: 0, fontSize: isMobile ? '14px' : '16px' }}>Gerencie seus produtos, preços e categorias</p>
         </div>
         
         <div style={{ display: 'flex', gap: '12px', width: isMobile ? '100%' : 'auto' }}>
@@ -272,8 +397,8 @@ export default function Estoque() {
         </div>
       </header>
 
-      <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexDirection: isMobile ? 'column' : 'row' }}>
-        <div style={{ display: 'flex', alignItems: 'center', background: 'white', padding: '10px 16px', borderRadius: '12px', flexGrow: 1, width: isMobile ? '100%' : 'auto', maxWidth: isMobile ? '100%' : '400px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', boxSizing: 'border-box' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', background: 'white', padding: '12px 16px', borderRadius: '12px', width: '100%', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', boxSizing: 'border-box' }}>
           <Search size={20} color="#64748b" />
           <input 
             type="text" 
@@ -284,17 +409,19 @@ export default function Estoque() {
           />
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', background: 'white', padding: '10px 16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', gap: '10px', width: isMobile ? '100%' : 'auto', boxSizing: 'border-box' }}>
-          <Filter size={20} color="#64748b" />
-          <select 
-            value={categoriaFiltro}
-            onChange={(e) => setCategoriaFiltro(e.target.value)}
-            style={{ border: 'none', background: 'transparent', outline: 'none', color: '#1e1b4b', fontSize: '15px', cursor: 'pointer', width: '100%' }}
-          >
-            {categoriasUnicas.map(cat => (
-              <option key={cat} value={cat}>{cat}</option>
-            ))}
-          </select>
+        <div style={{ display: 'flex', overflowX: 'auto', gap: '10px', paddingBottom: '8px', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch', width: '100%' }}>
+          {categoriasUnicas.map(cat => (
+            <button 
+              key={cat} 
+              onClick={() => setCategoriaFiltro(cat)} 
+              style={{ padding: '10px 20px', borderRadius: '10px', background: categoriaFiltro === cat ? '#4f46e5' : '#f1f5f9', color: categoriaFiltro === cat ? 'white' : '#64748b', border: 'none', fontWeight: 'bold', cursor: 'pointer', flexShrink: 0, fontSize: '14px', whiteSpace: 'nowrap', transition: '0.2s', boxShadow: categoriaFiltro === cat ? '0 4px 6px rgba(79, 70, 229, 0.2)' : 'none' }}
+            >
+              {cat}
+            </button>
+          ))}
+          <button onClick={() => setModalGerenciarCategorias(true)} style={{ padding: '10px 20px', borderRadius: '10px', background: '#e2e8f0', color: '#1e1b4b', border: 'none', fontWeight: 'bold', cursor: 'pointer', flexShrink: 0, fontSize: '14px', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Settings size={16} /> Gerenciar
+          </button>
         </div>
       </div>
 

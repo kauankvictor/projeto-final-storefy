@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Save, CheckCircle, AlertCircle, UploadCloud, X, LayoutGrid, Plus, Star } from 'lucide-react'
+import { ArrowLeft, Save, CheckCircle, AlertCircle, UploadCloud, X, LayoutGrid, Plus, Star, CreditCard, Info } from 'lucide-react'
 
 import { collection, addDoc, getDocs } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
@@ -15,11 +15,13 @@ export default function NovoProduto() {
   const [categoriasSelecionadas, setCategoriasSelecionadas] = useState([])
   
   const [preco, setPreco] = useState('')
-  const [precoPrazo, setPrecoPrazo] = useState('')
   const [precoAntigo, setPrecoAntigo] = useState('')
   const [quantidade, setQuantidade] = useState('')
   const [descricao, setDescricao] = useState('')
  
+  const [divideCartao, setDivideCartao] = useState(false)
+  const [maxParcelas, setMaxParcelas] = useState('')
+
   const [visivelCatalogo, setVisivelCatalogo] = useState(true)
   const [destaque, setDestaque] = useState(false)
   const [nomeDestaque, setNomeDestaque] = useState('')
@@ -174,10 +176,11 @@ export default function NovoProduto() {
         categorias: categoriasSelecionadas.length > 0 ? categoriasSelecionadas : ['Sem Categoria'],
         categoria: categoriaFallback,
         preco: parseFloat(preco),
-        precoPrazo: precoPrazo ? parseFloat(precoPrazo) : null,
         precoAntigo: precoAntigo ? parseFloat(precoAntigo) : null,
         quantidade: quantidade === '' ? 0 : parseInt(quantidade, 10),
         descricao: descricao.trim(),
+        divideCartao: divideCartao,
+        maxParcelas: divideCartao && maxParcelas ? parseInt(maxParcelas, 10) : null,
         visivelCatalogo: visivelCatalogo,
         destaque: destaque,
         nomeDestaque: destaque ? nomeDestaque.trim() : null,
@@ -204,10 +207,11 @@ export default function NovoProduto() {
       setCategoriasSelecionadas([])
       setInputCategoria('')
       setPreco('')
-      setPrecoPrazo('')
       setPrecoAntigo('')
       setQuantidade('')
       setDescricao('')
+      setDivideCartao(false)
+      setMaxParcelas('')
       setVisivelCatalogo(true)
       setDestaque(false)
       setNomeDestaque('')
@@ -365,13 +369,13 @@ export default function NovoProduto() {
          
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Nome do Produto *</label>
-            <input type="text" value={nome} onChange={(e) => setNome(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
+            <input type="text" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Digite o nome do produto" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
           </div>
 
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '20px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
               <label style={{ fontWeight: '600', color: '#475569' }}>Código de Barras</label>
-              <input type="text" value={codigoBarras} onChange={(e) => setCodigoBarras(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
+              <input type="text" value={codigoBarras} onChange={(e) => setCodigoBarras(e.target.value)} placeholder="Digite o código de barras" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
             </div>
            
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
@@ -387,7 +391,7 @@ export default function NovoProduto() {
                       adicionarCategoria();
                     }
                   }}
-                  placeholder="Nova categoria..." 
+                  placeholder="Digite uma nova categoria..." 
                   style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', flex: 1, boxSizing: 'border-box' }} 
                 />
                 <button type="button" onClick={adicionarCategoria} style={{ background: '#db2777', color: 'white', border: 'none', borderRadius: '8px', padding: '0 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -413,25 +417,50 @@ export default function NovoProduto() {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Descrição do Produto</label>
-            <textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', minHeight: '100px', resize: 'vertical', boxSizing: 'border-box' }} />
+            <textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Digite a descrição do produto" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', minHeight: '100px', resize: 'vertical', boxSizing: 'border-box' }} />
           </div>
 
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '16px', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 120px' }}>
               <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>À Vista (R$) *</label>
-              <input type="number" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 120px' }}>
-              <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>A Prazo (R$)</label>
-              <input type="number" step="0.01" value={precoPrazo} onChange={(e) => setPrecoPrazo(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
+              <input type="number" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} placeholder="Digite o preço à vista" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 120px' }}>
               <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Preço Antigo (R$)</label>
-              <input type="number" step="0.01" value={precoAntigo} onChange={(e) => setPrecoAntigo(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
+              <input type="number" step="0.01" value={precoAntigo} onChange={(e) => setPrecoAntigo(e.target.value)} placeholder="Digite o preço antigo" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 120px' }}>
               <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Qtd. Estoque</label>
-              <input type="number" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
+              <input type="number" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} placeholder="Digite a quantidade em estoque" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <h3 style={{ fontSize: '15px', color: '#1e1b4b', margin: '0 0 4px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <CreditCard size={18} color="#db2777" /> Configuração de Parcelamento
+            </h3>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <input type="checkbox" id="divideCartao" checked={divideCartao} onChange={(e) => setDivideCartao(e.target.checked)} style={{ width: '24px', height: '24px', cursor: 'pointer', accentColor: '#db2777' }} />
+              <label htmlFor="divideCartao" style={{ fontWeight: 'bold', color: '#475569', cursor: 'pointer', fontSize: '14px', margin: 0 }}>Divide no cartão de crédito?</label>
+            </div>
+
+            {divideCartao && (
+              <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ fontWeight: '600', color: '#475569', fontSize: '13px' }}>Número Máximo de Parcelas</label>
+                <input 
+                  type="number" 
+                  value={maxParcelas} 
+                  onChange={(e) => setMaxParcelas(e.target.value)} 
+                  placeholder="Digite o máximo de parcelas" 
+                  style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', width: '100%', maxWidth: '300px', boxSizing: 'border-box' }} 
+                />
+              </div>
+            )}
+            
+            <div style={{ background: '#fffbeb', color: '#d97706', padding: '12px', borderRadius: '8px', border: '1px solid #fde68a', fontSize: '13px', display: 'flex', alignItems: 'flex-start', gap: '8px', marginTop: '4px' }}>
+              <Info size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
+              <span>Lembrete: Compras a prazo podem sofrer alteração de valor. Ao salvar, o catálogo exibirá a mensagem instruindo o cliente a consultar o vendedor para valores parcelados.</span>
             </div>
           </div>
 
@@ -463,7 +492,7 @@ export default function NovoProduto() {
                     type="text"
                     value={nomeDestaque}
                     onChange={(e) => setNomeDestaque(e.target.value)}
-                    placeholder="Digite um novo nome..."
+                    placeholder="Digite o nome da vitrine..."
                     style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', boxSizing: 'border-box' }}
                   />
                   <button type="button" onClick={() => setModalEventosAberta(true)} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569' }}>
