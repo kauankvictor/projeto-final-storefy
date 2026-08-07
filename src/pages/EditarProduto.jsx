@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Save, CheckCircle, AlertCircle, UploadCloud, Trash2, X, LayoutGrid, Plus, Star, CreditCard, Info, Globe } from 'lucide-react'
+import { ArrowLeft, Save, CheckCircle, AlertCircle, UploadCloud, Trash2, X, LayoutGrid, Plus, Star, CreditCard, Info, Globe, RefreshCw } from 'lucide-react'
 
 import { doc, getDoc, updateDoc, deleteDoc, collection, getDocs, addDoc } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
@@ -11,6 +11,7 @@ export default function EditarProduto() {
   
   const [nome, setNome] = useState('')
   const [codigoBarras, setCodigoBarras] = useState('')
+  const [codigosExistentes, setCodigosExistentes] = useState([])
   
   const [inputCategoria, setInputCategoria] = useState('')
   const [categoriasSelecionadas, setCategoriasSelecionadas] = useState([])
@@ -20,9 +21,9 @@ export default function EditarProduto() {
   const [precoAntigo, setPrecoAntigo] = useState('')
   const [quantidade, setQuantidade] = useState('')
   
-  const [mostrarParcelamento, setMostrarParcelamento] = useState(false)
+  const [mostrarParcelamento, setMostrarParcelamento] = useState(true)
   const [maxParcelas, setMaxParcelas] = useState('')
-  const [mostrarAvisoAcrescimo, setMostrarAvisoAcrescimo] = useState(false)
+  const [mostrarAvisoAcrescimo, setMostrarAvisoAcrescimo] = useState(true)
 
   const [visivelCatalogo, setVisivelCatalogo] = useState(true)
   const [destaque, setDestaque] = useState(false)
@@ -42,7 +43,6 @@ export default function EditarProduto() {
   const [modalCategoriasAberta, setModalCategoriasAberta] = useState(false)
   const [modalEventosAberta, setModalEventosAberta] = useState(false)
 
-  // ESTADOS DO RECORTE DE IMAGEM
   const [filaImagens, setFilaImagens] = useState([])
   const [imgObj, setImgObj] = useState(null)
   const [baseSize, setBaseSize] = useState({ w: 0, h: 0 })
@@ -63,9 +63,13 @@ export default function EditarProduto() {
         
         let catSet = new Set()
         let evSet = new Set()
+        let codigosLista = []
 
         querySnapshot.docs.forEach(doc => {
           const data = doc.data()
+          
+          if (data.codigoBarras && doc.id !== id) codigosLista.push(data.codigoBarras)
+
           if (data.categorias && Array.isArray(data.categorias)) {
             data.categorias.forEach(c => catSet.add(c))
           } else if (data.categoria) {
@@ -76,6 +80,7 @@ export default function EditarProduto() {
           }
         })
 
+        setCodigosExistentes(codigosLista)
         setCategoriasLista([...catSet].sort((a, b) => a.localeCompare(b)))
         setEventosLista([...evSet].sort((a, b) => a.localeCompare(b)))
 
@@ -103,9 +108,9 @@ export default function EditarProduto() {
           setPrecoAntigo(dados.precoAntigo ? dados.precoAntigo.toString() : '')
           setQuantidade(dados.quantidade ? dados.quantidade.toString() : '0')
           
-          setMostrarParcelamento(dados.mostrarParcelamento || false)
+          setMostrarParcelamento(dados.mostrarParcelamento !== undefined ? dados.mostrarParcelamento : true)
           setMaxParcelas(dados.maxParcelas ? dados.maxParcelas.toString() : '')
-          setMostrarAvisoAcrescimo(dados.mostrarAvisoAcrescimo || false)
+          setMostrarAvisoAcrescimo(dados.mostrarAvisoAcrescimo !== undefined ? dados.mostrarAvisoAcrescimo : true)
 
           setVisivelCatalogo(dados.visivelCatalogo !== false) 
           setDestaque(dados.destaque || false)
@@ -132,7 +137,6 @@ export default function EditarProduto() {
     return () => window.removeEventListener('resize', handleResize)
   }, [id])
 
-  // GESTÃO DA FILA DE RECORTE DE IMAGENS
   useEffect(() => {
     if (filaImagens.length > 0 && !imgObj) {
       const file = filaImagens[0]
@@ -148,6 +152,18 @@ export default function EditarProduto() {
       img.src = url
     }
   }, [filaImagens, imgObj])
+
+  const gerarCodigoUnico = () => {
+    let novoCodigo = ''
+    let tentativas = 0
+    while (true) {
+      novoCodigo = Math.floor(10000 + Math.random() * 90000).toString()
+      if (!codigosExistentes.includes(novoCodigo)) break
+      tentativas++
+      if (tentativas > 1000) break 
+    }
+    setCodigoBarras(novoCodigo)
+  }
 
   const handleImagemChange = (e) => {
     const files = Array.from(e.target.files)
@@ -184,7 +200,6 @@ export default function EditarProduto() {
   }
 
   const salvarRecorte = () => {
-    // 1. Salvar Imagem Original
     const canvasOrig = document.createElement('canvas')
     let w = imgObj.width
     let h = imgObj.height
@@ -200,7 +215,6 @@ export default function EditarProduto() {
     ctxOrig.drawImage(imgObj, 0, 0, w, h)
     const originalBase64 = canvasOrig.toDataURL('image/jpeg', 0.8)
 
-    // 2. Salvar Recorte Quadrado
     const canvasCrop = document.createElement('canvas')
     canvasCrop.width = 500
     canvasCrop.height = 500
@@ -247,6 +261,11 @@ export default function EditarProduto() {
     e.preventDefault()
     if (nome.trim() === '' || preco.trim() === '') {
       setErro('Os campos Nome e Preço à Vista são obrigatórios!')
+      return
+    }
+
+    if (codigoBarras.trim() !== '' && codigosExistentes.includes(codigoBarras.trim())) {
+      setErro('Este código de barras já está em uso por outro produto. Digite outro ou gere um novo.')
       return
     }
 
@@ -300,7 +319,7 @@ export default function EditarProduto() {
 
       const dadosAtualizados = {
         nome,
-        codigoBarras,
+        codigoBarras: codigoBarras.trim(),
         categorias: categoriasSelecionadas.length > 0 ? categoriasSelecionadas : ['Sem Categoria'],
         categoria: categoriaFallback,
         descricao: descricao.trim(),
@@ -356,7 +375,6 @@ export default function EditarProduto() {
   return (
     <div style={{ maxWidth: '900px', display: 'flex', flexDirection: 'column', gap: '24px', paddingBottom: '40px', boxSizing: 'border-box', width: '100%' }}>
       
-      {/* MODAL DE RECORTE DE IMAGEM */}
       {filaImagens.length > 0 && imgObj && (
         <div 
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.9)', zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px', userSelect: 'none' }}
@@ -403,7 +421,7 @@ export default function EditarProduto() {
           <div style={{ background: 'white', width: '100%', maxWidth: '600px', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '24px', display: 'flex', flexDirection: 'column', maxHeight: '70vh', boxShadow: '0 -10px 25px rgba(0,0,0,0.1)' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '900', color: '#1f2937', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <LayoutGrid size={24} color="#4f46e5" /> Múltiplas Categorias
+                <LayoutGrid size={24} color="#db2777" /> Múltiplas Categorias
               </h2>
               <button onClick={() => setModalCategoriasAberta(false)} style={{ background: '#f3f4f6', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><X size={20} /></button>
             </div>
@@ -454,7 +472,7 @@ export default function EditarProduto() {
               </h2>
               <button onClick={() => setModalEventosAberta(false)} style={{ background: '#f3f4f6', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><X size={20} /></button>
             </div>
-           
+            
             <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingRight: '4px' }}>
               {eventosLista.length === 0 ? (
                 <p style={{ textAlign: 'center', color: '#6b7280' }}>Nenhuma vitrine/evento cadastrado ainda.</p>
@@ -528,7 +546,7 @@ export default function EditarProduto() {
           <p style={{ fontSize: '12px', color: '#64748b', textAlign: 'center', margin: 0 }}>A foto será ajustada automaticamente num fundo branco quadrado (500x500).</p>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', flexGrow: 1, width: '100%' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', flex: 1, minWidth: 0 }}>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Nome do Produto *</label>
@@ -536,12 +554,17 @@ export default function EditarProduto() {
           </div>
 
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '20px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 40%', minWidth: 0 }}>
               <label style={{ fontWeight: '600', color: '#475569' }}>Código de Barras</label>
-              <input type="text" value={codigoBarras} onChange={(e) => setCodigoBarras(e.target.value)} placeholder="Digite o código de barras" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input type="text" value={codigoBarras} onChange={(e) => setCodigoBarras(e.target.value)} placeholder="Ex: 12345" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', flex: 1, minWidth: '80px', boxSizing: 'border-box' }} />
+                <button type="button" onClick={gerarCodigoUnico} style={{ background: '#f8fafc', color: '#4f46e5', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontWeight: 'bold', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                  <RefreshCw size={18} /> Gerar
+                </button>
+              </div>
             </div>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 60%', minWidth: 0 }}>
               <label style={{ fontWeight: '600', color: '#475569' }}>Categorias</label>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <input 
@@ -554,13 +577,13 @@ export default function EditarProduto() {
                       adicionarCategoria();
                     }
                   }}
-                  placeholder="Digite uma nova categoria..." 
-                  style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', flex: 1, boxSizing: 'border-box' }} 
+                  placeholder="Nova categoria..." 
+                  style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', flex: 1, minWidth: '100px', boxSizing: 'border-box' }} 
                 />
-                <button type="button" onClick={adicionarCategoria} style={{ background: '#4f46e5', color: 'white', border: 'none', borderRadius: '8px', padding: '0 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <button type="button" onClick={adicionarCategoria} style={{ background: '#4f46e5', color: 'white', border: 'none', borderRadius: '8px', padding: '0 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <Plus size={20} />
                 </button>
-                <button type="button" onClick={() => setModalCategoriasAberta(true)} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569' }}>
+                <button type="button" onClick={() => setModalCategoriasAberta(true)} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569', flexShrink: 0 }}>
                   <LayoutGrid size={20} />
                 </button>
               </div>
