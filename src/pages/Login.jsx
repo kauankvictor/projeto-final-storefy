@@ -1,16 +1,16 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { signInWithEmailAndPassword } from 'firebase/auth'
+import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth'
 import { auth } from '../firebaseConfig'
-import { Mail, Lock, AlertCircle, LayoutDashboard, ChevronRight } from 'lucide-react'
+import { Mail, Lock, AlertCircle, LayoutDashboard, ChevronRight, CheckCircle2 } from 'lucide-react'
 
 export default function Login() {
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
   const [erro, setErro] = useState('')
+  const [mensagemSucesso, setMensagemSucesso] = useState('')
   const [carregando, setCarregando] = useState(false)
   
-  // Estados para efeitos visuais modernos (foco nos inputs)
   const [emailFocado, setEmailFocado] = useState(false)
   const [senhaFocada, setSenhaFocada] = useState(false)
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
@@ -26,6 +26,7 @@ export default function Login() {
   const handleLogin = async (e) => {
     e.preventDefault()
     setErro('')
+    setMensagemSucesso('')
 
     if (!email || !senha) {
       setErro('Por favor, preencha o e-mail e a senha.')
@@ -45,26 +46,46 @@ export default function Login() {
     }
   }
 
+  const handleEsqueciSenha = async () => {
+    setErro('')
+    setMensagemSucesso('')
+
+    if (!email) {
+      setErro('Digite seu e-mail no campo acima para receber o link de recuperação.')
+      return
+    }
+
+    try {
+      await sendPasswordResetEmail(auth, email)
+      setMensagemSucesso('E-mail de recuperação enviado! Verifique sua caixa de entrada ou caixa de spam.')
+    } catch (error) {
+      console.error(error)
+      setErro('Erro ao enviar e-mail. Verifique se o endereço está digitado corretamente.')
+    }
+  }
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#ffffff', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       
-      {/* COLUNA ESQUERDA: PAINEL ABSTRATO E MODERNO (Oculto no Mobile) */}
+      {/* COLUNA ESQUERDA: PAINEL ABSTRATO E MODERNO */}
       {!isMobile && (
         <div style={{ flex: 1.2, backgroundColor: '#0f0e26', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', padding: '40px', color: 'white', position: 'relative', overflow: 'hidden' }}>
           
-          {/* Luzes desfocadas no fundo (Glow Effects) */}
           <div style={{ position: 'absolute', top: '-10%', right: '-10%', width: '500px', height: '500px', background: '#2e2b6b', filter: 'blur(120px)', borderRadius: '50%', opacity: 0.6 }}></div>
           <div style={{ position: 'absolute', bottom: '-10%', left: '-10%', width: '400px', height: '400px', background: '#0a7a53', filter: 'blur(150px)', borderRadius: '50%', opacity: 0.5 }}></div>
 
           <div style={{ maxWidth: '480px', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', width: '100%' }}>
+            
+            <div style={{ marginBottom: '40px' }}>
+              <h1 style={{ fontSize: '56px', fontWeight: '900', margin: 0, letterSpacing: '-1px', color: '#ffffff', display: 'flex', alignItems: 'baseline' }}>
+                Storefy<span style={{ color: '#10b981', fontSize: '64px', marginLeft: '2px' }}>.</span>
+              </h1>
+            </div>
 
-            {/* Cartão de Vidro Fosco (Glassmorphism) */}
             <div style={{ background: 'rgba(255, 255, 255, 0.03)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', padding: '40px', borderRadius: '24px', border: '1px solid rgba(255, 255, 255, 0.08)', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
-              
               <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', padding: '16px', borderRadius: '16px', display: 'inline-flex', marginBottom: '24px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
                 <LayoutDashboard size={32} color="#10b981" />
               </div>
-              
               <h2 style={{ fontSize: '36px', fontWeight: '800', marginBottom: '16px', lineHeight: '1.1', color: '#f8fafc', letterSpacing: '-0.5px' }}>
                 Acelere a gestão <br />da sua loja.
               </h2>
@@ -77,11 +98,10 @@ export default function Login() {
         </div>
       )}
 
-      {/* COLUNA DIREITA: FORMULÁRIO DE LOGIN LIMPO E MODERNO */}
+      {/* COLUNA DIREITA: FORMULÁRIO DE LOGIN */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', padding: isMobile ? '32px 24px' : '40px', backgroundColor: '#ffffff' }}>
         <div style={{ width: '100%', maxWidth: '380px' }}>
           
-          {/* Logo reposicionada para o topo do formulário */}
           <div style={{ marginBottom: '32px' }}>
             <h1 style={{ fontSize: '42px', fontWeight: '900', margin: '0 0 8px 0', letterSpacing: '-1.5px', color: '#1c1b3b', display: 'flex', alignItems: 'baseline' }}>
               Storefy<span style={{ color: '#10b981', fontSize: '48px', marginLeft: '2px' }}>.</span>
@@ -144,15 +164,32 @@ export default function Login() {
                   onBlur={() => setSenhaFocada(false)}
                   placeholder="Digite sua senha" 
                   style={{ width: '100%', border: 'none', padding: '16px 12px', backgroundColor: 'transparent', outline: 'none', color: '#0f172a', fontSize: '15px', letterSpacing: senha ? '2px' : 'normal' }}
-                  required
                 />
+              </div>
+
+              {/* Botão Esqueci minha senha posicionado abaixo da senha */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '4px' }}>
+                <button 
+                  type="button" 
+                  onClick={handleEsqueciSenha}
+                  style={{ background: 'transparent', border: 'none', color: '#10b981', fontSize: '13px', fontWeight: '600', cursor: 'pointer', padding: 0 }}
+                >
+                  Esqueci minha senha
+                </button>
               </div>
             </div>
 
             {erro && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: '#fef2f2', color: '#b91c1c', padding: '14px 16px', borderRadius: '12px', fontSize: '14px', fontWeight: '500', animation: 'fadeIn 0.3s ease' }}>
-                <AlertCircle size={20} />
+                <AlertCircle size={20} style={{ flexShrink: 0 }} />
                 {erro}
+              </div>
+            )}
+
+            {mensagemSucesso && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: '#ecfdf5', color: '#047857', padding: '14px 16px', borderRadius: '12px', fontSize: '14px', fontWeight: '500', animation: 'fadeIn 0.3s ease' }}>
+                <CheckCircle2 size={20} style={{ flexShrink: 0 }} />
+                {mensagemSucesso}
               </div>
             )}
 

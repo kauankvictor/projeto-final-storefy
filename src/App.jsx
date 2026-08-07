@@ -14,7 +14,7 @@ import NotFound from './pages/NotFound'
 import Clientes from './pages/Clientes'
 import Configuracoes from './pages/Configuracoes'
 import Financeiro from './pages/Financeiro'
-import Login from './pages/Login' // NOVA TELA DE LOGIN
+import Login from './pages/Login'
 
 import Layout from './components/Layout'
 
@@ -43,7 +43,7 @@ function App() {
   // Tela de espera enquanto o Firebase lê a chave digital
   if (carregando) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#f9fafb', color: '#f472b6', fontWeight: 'bold', fontFamily: 'sans-serif' }}>
+      <div style={{ minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#f8fafc', color: '#10b981', fontWeight: 'bold', fontFamily: 'system-ui, sans-serif', fontSize: '18px' }}>
         Verificando segurança...
       </div>
     )
