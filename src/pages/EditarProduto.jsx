@@ -660,7 +660,7 @@ export default function EditarProduto() {
               
               {mostrarAvisoAcrescimo && (
                 <div style={{ marginLeft: '32px', marginTop: '-8px', fontSize: '12px', color: '#64748b' }}>
-                  O cliente verá a mensagem: <em>"Valores a prazo podem sofrer acréscimos. Consulte o vendedor."</em>
+                  O cliente verá a mensagem: <em>"Valores no cartão sofrem acréscimos. Consulte o vendedor."</em>
                 </div>
               )}
 
