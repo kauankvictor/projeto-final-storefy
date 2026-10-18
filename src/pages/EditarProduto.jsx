@@ -16,10 +16,13 @@ export default function EditarProduto() {
   const [inputCategoria, setInputCategoria] = useState('')
   const [categoriasSelecionadas, setCategoriasSelecionadas] = useState([])
   
-  const [descricao, setDescricao] = useState('')
+  const [custo, setCusto] = useState('')
+  const [lucroPercentual, setLucroPercentual] = useState('')
   const [preco, setPreco] = useState('')
-  const [precoAntigo, setPrecoAntigo] = useState('')
   const [quantidade, setQuantidade] = useState('')
+  
+  const [descricao, setDescricao] = useState('')
+  const [precoAntigo, setPrecoAntigo] = useState('')
   
   const [mostrarParcelamento, setMostrarParcelamento] = useState(true)
   const [maxParcelas, setMaxParcelas] = useState('')
@@ -103,10 +106,13 @@ export default function EditarProduto() {
             setCategoriasSelecionadas([])
           }
 
-          setDescricao(dados.descricao || '')
+          setCusto(dados.custo ? dados.custo.toString() : '')
+          setLucroPercentual(dados.lucroPercentual ? dados.lucroPercentual.toString() : '')
           setPreco(dados.preco ? dados.preco.toString() : '')
-          setPrecoAntigo(dados.precoAntigo ? dados.precoAntigo.toString() : '')
           setQuantidade(dados.quantidade ? dados.quantidade.toString() : '0')
+          
+          setDescricao(dados.descricao || '')
+          setPrecoAntigo(dados.precoAntigo ? dados.precoAntigo.toString() : '')
           
           setMostrarParcelamento(dados.mostrarParcelamento !== undefined ? dados.mostrarParcelamento : true)
           setMaxParcelas(dados.maxParcelas ? dados.maxParcelas.toString() : '')
@@ -257,8 +263,30 @@ export default function EditarProduto() {
     }
   }
 
+  const calcularPrecoSugerido = () => {
+    if (custo && lucroPercentual) {
+      return (parseFloat(custo) * (1 + parseFloat(lucroPercentual) / 100)).toFixed(2)
+    }
+    return ''
+  }
+
+  const calcularMargemReal = () => {
+    if (custo && preco) {
+      const valorCusto = parseFloat(custo)
+      const valorVenda = parseFloat(preco)
+      if (valorCusto > 0 && valorVenda >= valorCusto) {
+        const lucroReais = valorVenda - valorCusto
+        const lucroPorcentagem = (lucroReais / valorCusto) * 100
+        return `Lucro: R$ ${lucroReais.toFixed(2)} (${lucroPorcentagem.toFixed(1)}%)`
+      } else if (valorVenda < valorCusto) {
+        return `Prejuízo: R$ ${(valorCusto - valorVenda).toFixed(2)}`
+      }
+    }
+    return null
+  }
+
   const handleSalvar = async (e) => {
-    e.preventDefault()
+    if (e) e.preventDefault()
     if (nome.trim() === '' || preco.trim() === '') {
       setErro('Os campos Nome e Preço à Vista são obrigatórios!')
       return
@@ -276,6 +304,8 @@ export default function EditarProduto() {
 
     setProcessando(true)
     try {
+      const novoCustoNum = custo ? parseFloat(custo) : 0
+      const novoLucroNum = lucroPercentual ? parseFloat(lucroPercentual) : 0
       const novoPrecoNum = parseFloat(preco)
       const novaQtdNum = parseInt(quantidade, 10) || 0
       const categoriasAtuaisStr = categoriasSelecionadas.join(', ')
@@ -285,18 +315,27 @@ export default function EditarProduto() {
         if (nome !== produtoOriginal.nome) {
           mudancas.push(`Nome alterado de "${produtoOriginal.nome}" para "${nome}"`)
         }
+        
+        if (novoCustoNum !== parseFloat(produtoOriginal.custo || 0)) {
+          mudancas.push(`Custo atualizado para ${formatoMoeda(novoCustoNum)}`)
+        }
+        
         if (novoPrecoNum !== parseFloat(produtoOriginal.preco || 0)) {
-          mudancas.push(`Preço à vista de ${formatoMoeda(produtoOriginal.preco)} para ${formatoMoeda(novoPrecoNum)}`)
+          mudancas.push(`Preço de Venda alterado de ${formatoMoeda(produtoOriginal.preco)} para ${formatoMoeda(novoPrecoNum)}`)
         }
+        
         if (novaQtdNum !== parseInt(produtoOriginal.quantidade || 0, 10)) {
-          mudancas.push(`Quantidade de ${produtoOriginal.quantidade || 0} para ${novaQtdNum}`)
+          mudancas.push(`Quantidade em estoque de ${produtoOriginal.quantidade || 0} para ${novaQtdNum}`)
         }
+        
         if (codigoBarras !== (produtoOriginal.codigoBarras || '')) {
           mudancas.push(`Código de barras modificado`)
         }
+        
         if (mostrarParcelamento !== (produtoOriginal.mostrarParcelamento || false)) {
           mudancas.push(`Disponibilidade de parcelamento modificada`)
         }
+        
         if (parseInt(maxParcelas || 0, 10) !== parseInt(produtoOriginal.maxParcelas || 0, 10)) {
           mudancas.push(`Máximo de parcelas modificado`)
         }
@@ -322,10 +361,12 @@ export default function EditarProduto() {
         codigoBarras: codigoBarras.trim(),
         categorias: categoriasSelecionadas.length > 0 ? categoriasSelecionadas : ['Sem Categoria'],
         categoria: categoriaFallback,
-        descricao: descricao.trim(),
+        custo: novoCustoNum,
+        lucroPercentual: novoLucroNum,
         preco: novoPrecoNum,
-        precoAntigo: precoAntigo ? parseFloat(precoAntigo) : null,
         quantidade: novaQtdNum,
+        descricao: visivelCatalogo ? descricao.trim() : '',
+        precoAntigo: (visivelCatalogo && precoAntigo) ? parseFloat(precoAntigo) : null,
         mostrarParcelamento: visivelCatalogo ? mostrarParcelamento : false,
         maxParcelas: visivelCatalogo && mostrarParcelamento && maxParcelas ? parseInt(maxParcelas, 10) : null,
         mostrarAvisoAcrescimo: visivelCatalogo ? mostrarAvisoAcrescimo : false,
@@ -369,6 +410,8 @@ export default function EditarProduto() {
       }
     }
   }
+
+  const margemRealTexto = calcularMargemReal()
 
   if (carregando) return <div style={{ padding: '40px', textAlign: 'center' }}>Carregando...</div>
 
@@ -509,14 +552,24 @@ export default function EditarProduto() {
         </div>
       )}
 
+      {/* CABEÇALHO ATUALIZADO COM BOTÕES EXCLUIR E SALVAR */}
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <button onClick={() => navigate('/estoque')} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center', padding: 0 }}><ArrowLeft size={24} /></button>
           <div><h1 style={{ fontSize: isMobile ? '24px' : '28px', color: '#1e1b4b', fontWeight: 'bold', margin: 0 }}>Editar Produto</h1></div>
         </div>
-        <button onClick={handleExcluir} style={{ background: 'transparent', color: '#ef4444', border: '1px solid #fee2e2', padding: '10px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
-          <Trash2 size={18} /> Excluir
-        </button>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button onClick={handleExcluir} style={{ background: 'transparent', color: '#ef4444', border: '1px solid #fee2e2', padding: '10px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
+            <Trash2 size={18} /> Excluir
+          </button>
+          <button 
+            onClick={handleSalvar} 
+            disabled={processando} 
+            style={{ background: processando ? '#94a3b8' : '#4f46e5', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', cursor: processando ? 'not-allowed' : 'pointer', fontSize: '15px' }}
+          >
+            <Save size={18} /> {processando ? 'Salvando...' : 'Salvar'}
+          </button>
+        </div>
       </header>
 
       {erro && <div style={{ background: '#fee2e2', color: '#ef4444', padding: '16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '500' }}><AlertCircle size={20} />{erro}</div>}
@@ -554,7 +607,7 @@ export default function EditarProduto() {
           </div>
 
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '20px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 40%', minWidth: 0 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 50%', minWidth: 0 }}>
               <label style={{ fontWeight: '600', color: '#475569' }}>Código de Barras</label>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <input type="text" value={codigoBarras} onChange={(e) => setCodigoBarras(e.target.value)} placeholder="Ex: 12345" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', flex: 1, minWidth: '80px', boxSizing: 'border-box' }} />
@@ -564,7 +617,7 @@ export default function EditarProduto() {
               </div>
             </div>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 60%', minWidth: 0 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 50%', minWidth: 0 }}>
               <label style={{ fontWeight: '600', color: '#475569' }}>Categorias</label>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <input 
@@ -601,23 +654,37 @@ export default function EditarProduto() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Descrição do Produto</label>
-            <textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Digite a descrição do produto" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', minHeight: '100px', resize: 'vertical', boxSizing: 'border-box' }} />
-          </div>
-
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '16px', flexWrap: 'wrap' }}>
+            
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 120px' }}>
+              <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Custo (R$)</label>
+              <input type="number" step="0.01" value={custo} onChange={(e) => setCusto(e.target.value)} placeholder="Ex: 25.00" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 120px' }}>
+              <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Lucro (%)</label>
+              <input type="number" step="0.1" value={lucroPercentual} onChange={(e) => setLucroPercentual(e.target.value)} placeholder="Ex: 50" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 120px' }}>
+              <label style={{ fontWeight: '600', color: '#94a3b8', fontSize: '14px' }}>Sugestão (R$)</label>
+              <input type="text" readOnly value={calcularPrecoSugerido()} placeholder="Automático" style={{ padding: '12px', borderRadius: '8px', border: '1px dashed #cbd5e1', background: '#f8fafc', color: '#94a3b8', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box', cursor: 'not-allowed' }} />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: '1 1 120px' }}>
               <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>À Vista (R$) *</label>
-              <input type="number" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} placeholder="Digite o preço à vista" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
+              <input type="number" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} placeholder="Preço Final" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
+              {/* FEEDBACK DE MARGEM DE LUCRO REAL */}
+              {margemRealTexto && (
+                <span style={{ fontSize: '12px', fontWeight: 'bold', color: margemRealTexto.includes('Prejuízo') ? '#ef4444' : '#10b981', marginTop: '2px' }}>
+                  {margemRealTexto}
+                </span>
+              )}
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 120px' }}>
-              <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Preço Antigo (R$)</label>
-              <input type="number" step="0.01" value={precoAntigo} onChange={(e) => setPrecoAntigo(e.target.value)} placeholder="Digite o preço antigo" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
-            </div>
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 120px' }}>
               <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Qtd. Estoque</label>
-              <input type="number" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} placeholder="Digite a quantidade em estoque" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
+              <input type="number" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} placeholder="Em estoque" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
             </div>
           </div>
 
@@ -630,64 +697,77 @@ export default function EditarProduto() {
               <input type="checkbox" id="visivelCatalogo" checked={visivelCatalogo} onChange={(e) => setVisivelCatalogo(e.target.checked)} style={{ width: '24px', height: '24px', cursor: 'pointer', accentColor: '#db2777' }} />
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 <label htmlFor="visivelCatalogo" style={{ fontWeight: 'bold', color: '#1e1b4b', cursor: 'pointer', fontSize: '15px', margin: 0 }}>Exibir no Catálogo Online</label>
-                <span style={{ fontSize: '13px', color: '#64748b' }}>Desmarque para esconder o produto da vitrine do cliente.</span>
+                <span style={{ fontSize: '13px', color: '#64748b' }}>Marque para configurar as informações da vitrine do cliente.</span>
               </div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', opacity: visivelCatalogo ? 1 : 0.4, pointerEvents: visivelCatalogo ? 'auto' : 'none', transition: '0.3s', borderTop: '1px dashed #cbd5e1', paddingTop: '16px' }}>
+            {/* O BLOCO SÓ EXISTE (E OCUPA ESPAÇO) SE VISIVELCATALOGO FOR TRUE */}
+            {visivelCatalogo && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', transition: 'all 0.3s ease-in-out', borderTop: '1px dashed #cbd5e1', paddingTop: '16px' }}>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Descrição do Produto</label>
+                  <textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Digite a descrição que o cliente verá no catálogo..." style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', minHeight: '100px', resize: 'vertical', boxSizing: 'border-box' }} />
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', maxWidth: '250px' }}>
+                  <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Preço Antigo / Riscado (R$)</label>
+                  <input type="number" step="0.01" value={precoAntigo} onChange={(e) => setPrecoAntigo(e.target.value)} placeholder="Ex: 50.00" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '8px' }}>
+                  <input type="checkbox" id="destaque" checked={destaque} onChange={(e) => setDestaque(e.target.checked)} style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#db2777' }} />
+                  <label htmlFor="destaque" style={{ fontWeight: 'bold', color: '#1e1b4b', cursor: 'pointer', fontSize: '14px', margin: 0 }}>Destacar em Vitrine Especial (Kits, Eventos)</label>
+                </div>
               
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <input type="checkbox" id="destaque" checked={destaque} onChange={(e) => setDestaque(e.target.checked)} style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#db2777' }} />
-                <label htmlFor="destaque" style={{ fontWeight: 'bold', color: '#1e1b4b', cursor: 'pointer', fontSize: '14px', margin: 0 }}>Destacar em Vitrine Especial (Kits, Eventos)</label>
-              </div>
-            
-              {destaque && (
-                <div style={{ marginLeft: '32px', marginTop: '-8px' }}>
-                  <label style={{ fontWeight: '600', color: '#475569', fontSize: '13px' }}>Nome da Seção (Ex: Dia dos Namorados)</label>
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-                    <input
-                      type="text"
-                      value={nomeDestaque}
-                      onChange={(e) => setNomeDestaque(e.target.value)}
-                      placeholder="Digite o nome da vitrine..."
-                      style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', boxSizing: 'border-box' }}
-                    />
-                    <button type="button" onClick={() => setModalEventosAberta(true)} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569' }}>
-                      <LayoutGrid size={20} />
-                    </button>
+                {destaque && (
+                  <div style={{ marginLeft: '32px', marginTop: '-8px' }}>
+                    <label style={{ fontWeight: '600', color: '#475569', fontSize: '13px' }}>Nome da Seção (Ex: Dia dos Namorados)</label>
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                      <input
+                        type="text"
+                        value={nomeDestaque}
+                        onChange={(e) => setNomeDestaque(e.target.value)}
+                        placeholder="Digite o nome da vitrine..."
+                        style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', boxSizing: 'border-box' }}
+                      />
+                      <button type="button" onClick={() => setModalEventosAberta(true)} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569' }}>
+                        <LayoutGrid size={20} />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <input type="checkbox" id="mostrarParcelamento" checked={mostrarParcelamento} onChange={(e) => setMostrarParcelamento(e.target.checked)} style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#db2777' }} />
-                <label htmlFor="mostrarParcelamento" style={{ fontWeight: 'bold', color: '#1e1b4b', cursor: 'pointer', fontSize: '14px', margin: 0 }}>Mostrar opção de parcelamento no cartão</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <input type="checkbox" id="mostrarParcelamento" checked={mostrarParcelamento} onChange={(e) => setMostrarParcelamento(e.target.checked)} style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#db2777' }} />
+                  <label htmlFor="mostrarParcelamento" style={{ fontWeight: 'bold', color: '#1e1b4b', cursor: 'pointer', fontSize: '14px', margin: 0 }}>Mostrar opção de parcelamento no cartão</label>
+                </div>
+
+                {mostrarParcelamento && (
+                  <div style={{ marginLeft: '32px', marginTop: '-8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <input 
+                      type="number" 
+                      value={maxParcelas} 
+                      onChange={(e) => setMaxParcelas(e.target.value)} 
+                      placeholder="Máx. de parcelas (ex: 12)" 
+                      style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', width: '100%', maxWidth: '250px', boxSizing: 'border-box' }} 
+                    />
+                  </div>
+                )}
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <input type="checkbox" id="mostrarAvisoAcrescimo" checked={mostrarAvisoAcrescimo} onChange={(e) => setMostrarAvisoAcrescimo(e.target.checked)} style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#db2777' }} />
+                  <label htmlFor="mostrarAvisoAcrescimo" style={{ fontWeight: 'bold', color: '#1e1b4b', cursor: 'pointer', fontSize: '14px', margin: 0 }}>Exibir aviso sobre acréscimo</label>
+                </div>
+                
+                {mostrarAvisoAcrescimo && (
+                  <div style={{ marginLeft: '32px', marginTop: '-8px', fontSize: '12px', color: '#64748b' }}>
+                    O cliente verá a mensagem: <em>"Valores no cartão sofrem acréscimos. Consulte o vendedor."</em>
+                  </div>
+                )}
+
               </div>
-
-              {mostrarParcelamento && (
-                <div style={{ marginLeft: '32px', marginTop: '-8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <input 
-                    type="number" 
-                    value={maxParcelas} 
-                    onChange={(e) => setMaxParcelas(e.target.value)} 
-                    placeholder="Máx. de parcelas (ex: 12)" 
-                    style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', width: '100%', maxWidth: '250px', boxSizing: 'border-box' }} 
-                  />
-                </div>
-              )}
-              
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <input type="checkbox" id="mostrarAvisoAcrescimo" checked={mostrarAvisoAcrescimo} onChange={(e) => setMostrarAvisoAcrescimo(e.target.checked)} style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#db2777' }} />
-                <label htmlFor="mostrarAvisoAcrescimo" style={{ fontWeight: 'bold', color: '#1e1b4b', cursor: 'pointer', fontSize: '14px', margin: 0 }}>Exibir aviso sobre acréscimo</label>
-              </div>
-              
-              {mostrarAvisoAcrescimo && (
-                <div style={{ marginLeft: '32px', marginTop: '-8px', fontSize: '12px', color: '#64748b' }}>
-                  O cliente verá a mensagem: <em>"Valores no cartão sofrem acréscimos. Consulte o vendedor."</em>
-                </div>
-              )}
-
-            </div>
+            )}
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px', width: '100%' }}>

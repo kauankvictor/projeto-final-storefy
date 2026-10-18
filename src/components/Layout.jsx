@@ -68,7 +68,7 @@ export default function Layout({ children }) {
           boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
         }}>
           <h2 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0 }}>
-            Storefy<span style={{ color: '#10b981' }}>.</span>
+            Storefy PDV<span style={{ color: '#10b981' }}>.</span>
           </h2>
           <button 
             onClick={() => setMenuAberto(true)} 

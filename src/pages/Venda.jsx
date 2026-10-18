@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { Search, Filter, ShoppingCart, Plus, Minus, Trash2, CheckCircle, AlertCircle, Tag, UserCheck, X, Receipt, UserPlus, Image as ImageIcon, LayoutGrid, CreditCard } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Search, Filter, ShoppingCart, Plus, Minus, Trash2, CheckCircle, AlertCircle, Tag, UserCheck, X, Receipt, LayoutGrid, Lock } from 'lucide-react'
 
 import { collection, getDocs, addDoc, doc, updateDoc, getDoc } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
@@ -12,19 +12,19 @@ export default function Venda() {
   const [carrinho, setCarrinho] = useState([])
   const [carrinhoAberto, setCarrinhoAberto] = useState(false)
   
-  const [clienteNome, setClienteNome] = useState('')
-  const [formaPagamento, setFormaPagamento] = useState('Pix')
+  const [pagamentos, setPagamentos] = useState({
+    dinheiro: '',
+    pix: '',
+    cartaoCredito: '',
+    cartaoDebito: ''
+  })
   
+  const [aplicarDesconto, setAplicarDesconto] = useState(false)
   const [descontoTipo, setDescontoTipo] = useState('R$')
   const [descontoValor, setDescontoValor] = useState('')
-  const [modalConfirmacao, setModalConfirmacao] = useState(false)
-  const [produtoSelecionado, setProdutoSelecionado] = useState(null)
+  const [senhaDesconto, setSenhaDesconto] = useState('')
 
-  const [listaClientes, setListaClientes] = useState([])
-  const [clienteSelecionado, setClienteSelecionado] = useState(null)
-  const [buscaCliente, setBuscaCliente] = useState('')
-  const [criandoClienteRapido, setCriandoClienteRapido] = useState(false)
-  const [novoClienteNome, setNovoClienteNome] = useState('')
+  const [modalConfirmacao, setModalConfirmacao] = useState(false)
 
   const [modalCategoriasAberta, setModalCategoriasAberta] = useState(false)
   const [vendedorNome, setVendedorNome] = useState('')
@@ -35,6 +35,7 @@ export default function Venda() {
   const [processando, setProcessando] = useState(false)
 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+  const inputBuscaRef = useRef(null)
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768)
@@ -43,13 +44,34 @@ export default function Venda() {
   }, [])
 
   useEffect(() => {
-    if (modalCategoriasAberta || carrinhoAberto) {
+    const handleKeyDown = (e) => {
+      if (e.key === 'F11') {
+        e.preventDefault()
+        if (modalConfirmacao) {
+          document.getElementById('btn-confirmar-venda')?.click()
+        } else {
+          document.getElementById('btn-fechar-venda')?.click()
+        }
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [modalConfirmacao])
+
+  useEffect(() => {
+    if (!modalConfirmacao && !carrinhoAberto && !modalCategoriasAberta) {
+      inputBuscaRef.current?.focus()
+    }
+  }, [modalConfirmacao, carrinhoAberto, modalCategoriasAberta])
+
+  useEffect(() => {
+    if (modalCategoriasAberta || carrinhoAberto || modalConfirmacao) {
       document.body.style.overflow = 'hidden'
     } else {
       document.body.style.overflow = 'auto'
     }
     return () => { document.body.style.overflow = 'auto' }
-  }, [modalCategoriasAberta, carrinhoAberto])
+  }, [modalCategoriasAberta, carrinhoAberto, modalConfirmacao])
 
   useEffect(() => {
     const carregarDadosNuvem = async () => {
@@ -57,10 +79,6 @@ export default function Venda() {
         const queryProdutos = await getDocs(collection(db, "produtos"))
         const listaP = queryProdutos.docs.map(d => ({ id: d.id, ...d.data() }))
         setProdutos(listaP)
-
-        const queryClientes = await getDocs(collection(db, "clientes"))
-        const listaC = queryClientes.docs.map(d => ({ id: d.id, ...d.data() }))
-        setListaClientes(listaC)
 
         const docRefVendedores = doc(db, "configuracoes", "vendedores")
         const docSnapVendedores = await getDoc(docRefVendedores)
@@ -71,18 +89,11 @@ export default function Venda() {
         }
       } catch (error) {
         console.error("Erro ao carregar dados na frente de caixa:", error)
-        setErro("Falha ao sincronizar dados com o servidor Google.")
+        setErro("Falha ao sincronizar dados com o servidor.")
       }
-    };
+    }
     carregarDadosNuvem()
   }, [sucesso])
-
-  const getPrecoItem = (item, formaPagamentoAtual) => {
-    if (formaPagamentoAtual === 'Cartão de Crédito' || formaPagamentoAtual === 'Anotar (Fiado)') {
-      return item.precoPrazo ? Number(item.precoPrazo) : Number(item.preco)
-    }
-    return Number(item.preco)
-  }
 
   let catSet = new Set()
   produtos.forEach(p => {
@@ -93,7 +104,6 @@ export default function Venda() {
     }
   })
   const categoriasUnicas = ['Todas', 'Promoções', ...Array.from(catSet).sort((a, b) => a.localeCompare(b))]
-  
   const categoriasExibidas = isMobile ? categoriasUnicas.slice(0, 3) : categoriasUnicas
   const mostrarBotaoTodasCategorias = isMobile && categoriasUnicas.length > 3
 
@@ -120,10 +130,6 @@ export default function Venda() {
     return matchBusca && matchCategoria
   })
 
-  const clientesFiltradosBusca = listaClientes.filter(c =>
-    c.nome.toLowerCase().includes(buscaCliente.toLowerCase())
-  )
-  
   const adicionarAoCarrinho = (produto) => {
     setErro('')
     const itemJaNoCarrinho = carrinho.find(item => item.id === produto.id)
@@ -143,7 +149,6 @@ export default function Venda() {
         return
       }
       setCarrinho([...carrinho, { ...produto, quantidadeComprada: 1 }])
-      if (isMobile) setCarrinhoAberto(true)
     }
   }
 
@@ -158,31 +163,23 @@ export default function Venda() {
     }
   }
 
-  const handleCadastrarClienteRapido = async (e) => {
-    e.preventDefault()
-    if (!novoClienteNome.trim()) return
-
-    const novoC = { nome: novoClienteNome.trim(), telefone: '', endereco: '', anotacoes: [] }
-    
-    try {
-      const docRef = await addDoc(collection(db, "clientes"), novoC)
-      const clienteComId = { id: docRef.id, ...novoC }
-      
-      setListaClientes([clienteComId, ...listaClientes])
-      setClienteSelecionado(clienteComId) 
-      setNovoClienteNome('')
-      setCriandoClienteRapido(false)
-    } catch (error) {
-      console.error("Erro ao cadastrar cliente rápido:", error)
-      setErro("Não foi possível registrar o cliente.")
+  const handleBuscaKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      if (busca.trim()) {
+        const produtoEncontrado = produtos.find(p => p.codigoBarras === busca.trim())
+        if (produtoEncontrado) {
+          adicionarAoCarrinho(produtoEncontrado)
+          setBusca('')
+        }
+      }
     }
   }
 
-  const calcularSubtotal = () => {
-    return carrinho.reduce((total, item) => total + (getPrecoItem(item, formaPagamento) * item.quantidadeComprada), 0)
-  }
+  const calcularSubtotal = () => carrinho.reduce((total, item) => total + (Number(item.preco) * item.quantidadeComprada), 0)
 
   const calcularDescontoReal = () => {
+    if (!aplicarDesconto) return 0
     const subtotal = calcularSubtotal()
     const valorDigitado = parseFloat(descontoValor) || 0
     if (valorDigitado <= 0) return 0
@@ -194,28 +191,41 @@ export default function Venda() {
     return 0
   }
 
-  const calcularTotalFinal = () => {
-    return calcularSubtotal() - calcularDescontoReal()
+  const calcularTotalFinal = () => calcularSubtotal() - calcularDescontoReal()
+
+  const calcularTotalPago = () => {
+    return (parseFloat(pagamentos.dinheiro) || 0) + 
+           (parseFloat(pagamentos.pix) || 0) + 
+           (parseFloat(pagamentos.cartaoCredito) || 0) + 
+           (parseFloat(pagamentos.cartaoDebito) || 0)
   }
-  
+
   const prepararVenda = () => {
     if (carrinho.length === 0) {
       setErro('O carrinho está vazio!')
       return
     }
-    if (formaPagamento === 'Anotar (Fiado)' && !clienteSelecionado) {
-      setErro('Selecione ou cadastre um cliente para fechar no Fiado!')
-      return
-    }
     setErro('')
+    if (calcularTotalPago() === 0) {
+       setPagamentos(prev => ({ ...prev, dinheiro: calcularTotalFinal().toFixed(2) }))
+    }
     setModalConfirmacao(true)
   }
 
   const confirmarEFinalizarVenda = async (e) => {
-    e.preventDefault()
+    if(e) e.preventDefault()
+    setErro('')
 
-    if (!vendedorNome.trim()) {
-      alert("Selecione o nome do vendedor para prosseguir!")
+    const totalVenda = calcularTotalFinal()
+    const totalPago = calcularTotalPago()
+
+    if (totalPago < totalVenda - 0.01) {
+      setErro(`Falta R$ ${(totalVenda - totalPago).toFixed(2)} para completar o pagamento.`)
+      return
+    }
+
+    if (aplicarDesconto && calcularDescontoReal() > 0 && senhaDesconto !== '0000') {
+      setErro('Senha de desconto incorreta! A venda não pode ser finalizada.')
       return
     }
 
@@ -231,56 +241,40 @@ export default function Venda() {
         }
       }
 
-      if (formaPagamento === 'Anotar (Fiado)') {
-        const textoDebitoItens = carrinho.map(item => `${item.quantidadeComprada}x ${item.nome}`).join('\n')
-        
-        const novaAnotacaoDebito = {
-          id: Date.now(),
-          texto: `Compra Frente de Caixa:\n${textoDebitoItens}\n(Vendedor: ${vendedorNome})`,
-          valor: calcularTotalFinal(),
-          valorPago: 0,
-          dataVencimento: 'Sem prazo',
-          dataCriacao: new Date().toLocaleDateString('pt-BR'),
-          horaCriacao: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-          status: 'Pendente'
-        }
-
-        const clienteDocRef = doc(db, "clientes", clienteSelecionado.id)
-        const anotacoesAtuais = clienteSelecionado.anotacoes || []
-        await updateDoc(clienteDocRef, {
-          anotacoes: [novaAnotacaoDebito, ...anotacoesAtuais]
-        })
-      }
+      const formasUsadas = []
+      if (parseFloat(pagamentos.dinheiro) > 0) formasUsadas.push('Dinheiro')
+      if (parseFloat(pagamentos.pix) > 0) formasUsadas.push('Pix')
+      if (parseFloat(pagamentos.cartaoCredito) > 0) formasUsadas.push('Crédito')
+      if (parseFloat(pagamentos.cartaoDebito) > 0) formasUsadas.push('Débito')
 
       const novaVenda = {
         idRegistro: Date.now(),
-        tipo: formaPagamento === 'Anotar (Fiado)' ? 'FIADO' : 'VENDA', 
+        tipo: 'VENDA', 
         data: new Date().toLocaleDateString('pt-BR'),
         hora: new Date().toLocaleTimeString('pt-BR'),
         itens: carrinho.map(item => ({
           id: item.id,
           nome: item.nome,
-          preco: getPrecoItem(item, formaPagamento), 
+          preco: Number(item.preco), 
           quantidadeComprada: item.quantidadeComprada,
           categoria: item.categorias ? item.categorias.join(', ') : (item.categoria || 'Sem categoria')
         })),
         subtotal: calcularSubtotal(),
         desconto: calcularDescontoReal(),
-        total: calcularTotalFinal(),
-        formaPagamento,
-        vendedor: vendedorNome,
-        cliente: formaPagamento === 'Anotar (Fiado)' ? { nome: clienteSelecionado.nome, id: clienteSelecionado.id } : (clienteNome ? { nome: clienteNome } : null)
+        total: totalVenda,
+        formaPagamento: formasUsadas.join(' + '),
+        pagamentosDetalhados: pagamentos,
+        vendedor: vendedorNome || 'Não informado'
       }
 
       await addDoc(collection(db, "historico"), novaVenda)
 
       setSucesso(true)
       setCarrinho([])
-      setClienteNome('')
-      setClienteSelecionado(null)
-      setBuscaCliente('')
-      setFormaPagamento('Pix')
       setDescontoValor('')
+      setSenhaDesconto('')
+      setAplicarDesconto(false)
+      setPagamentos({ dinheiro: '', pix: '', cartaoCredito: '', cartaoDebito: '' })
       setVendedorNome('')
       setErro('')
       setModalConfirmacao(false)
@@ -297,13 +291,6 @@ export default function Venda() {
 
   const formatoMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(valor) || 0)
 
-  const pegarPrimeiraFoto = (produto) => {
-    if (produto.fotos && produto.fotos.length > 0) return produto.fotos[0].recortada || produto.fotos[0]
-    if (produto.imagem) return produto.imagem
-    return null
-  }
-
-  // COMPONENTE DO CARRINHO
   const renderCarrinho = () => (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px', marginBottom: '16px', flexShrink: 0 }}>
@@ -323,7 +310,7 @@ export default function Venda() {
             <div style={{ flex: 1, minWidth: isMobile ? '100%' : 0 }}>
               <p style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: '0' }}>{item.nome}</p>
               <p style={{ fontSize: '13px', color: '#4f46e5', fontWeight: '600', margin: '4px 0 0 0' }}>
-                {formatoMoeda(getPrecoItem(item, formaPagamento))}
+                {formatoMoeda(item.preco)}
               </p>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f8fafc', padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', width: isMobile ? '100%' : 'auto', justifyContent: isMobile ? 'space-between' : 'flex-start' }}>
@@ -338,65 +325,13 @@ export default function Venda() {
       </div>
 
       <div style={{ borderTop: '2px solid #f1f5f9', paddingTop: '16px', marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '16px', flexShrink: 0 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Forma de Pagamento</label>
-          <select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', cursor: 'pointer', background: '#f8fafc' }}>
-            <option value="Pix">Pix (Preço à vista)</option>
-            <option value="Dinheiro">Dinheiro (Preço à vista)</option>
-            <option value="Cartão de Débito">Cartão de Débito (Preço à vista)</option>
-            <option value="Cartão de Crédito">Cartão de Crédito (Preço a Prazo)</option>
-            <option value="Anotar (Fiado)">Anotar na Conta / Fiado (Preço a Prazo)</option>
-          </select>
-        </div>
-
-        {formaPagamento === 'Anotar (Fiado)' ? (
-          <div style={{ background: '#fef2f2', padding: '14px', borderRadius: '12px', border: '1px solid #fee2e2', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#ef4444', textTransform: 'uppercase' }}>Venda no Fiado</span>
-            
-            {clienteSelecionado ? (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'white', padding: '10px', borderRadius: '8px', border: '1px solid #ef4444' }}>
-                <span style={{ color: '#1e1b4b', fontWeight: 'bold', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}><UserCheck size={16}/> {clienteSelecionado.nome}</span>
-                <button onClick={() => setClienteSelecionado(null)} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer' }}><X size={16} /></button>
-              </div>
-            ) : criandoClienteRapido ? (
-              <div style={{ display: 'flex', gap: '6px' }}>
-                <input type="text" placeholder="Nome" value={novoClienteNome} onChange={(e) => setNovoClienteNome(e.target.value)} style={{ flex: 1, padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '13px' }} />
-                <button onClick={handleCadastrarClienteRapido} style={{ background: '#10b981', color: 'white', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>Salvar</button>
-                <button onClick={() => setCriandoClienteRapido(false)} style={{ background: '#cbd5e1', color: '#475569', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>X</button>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  <input type="text" placeholder="Buscar cliente..." value={buscaCliente} onChange={(e) => setBuscaCliente(e.target.value)} style={{ flex: 1, padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '13px' }} />
-                  <button onClick={() => setCriandoClienteRapido(true)} style={{ background: '#4f46e5', color: 'white', border: 'none', padding: '8px', borderRadius: '6px', display: 'flex', alignItems: 'center', cursor: 'pointer' }}><UserPlus size={16}/></button>
-                </div>
-                
-                {buscaCliente.trim() && (
-                  <div style={{ background: 'white', border: '1px solid #cbd5e1', borderRadius: '8px', maxHeight: '110px', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-                    {clientesFiltradosBusca.map(c => (
-                      <button key={c.id} onClick={() => setClienteSelecionado(c)} style={{ background: 'transparent', border: 'none', padding: '8px 12px', textAlign: 'left', cursor: 'pointer', fontSize: '13px', color: '#1e1b4b', borderBottom: '1px solid #f1f5f9' }}>
-                        {c.nome}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Cliente (Opcional)</label>
-            <input type="text" placeholder="Ex: Maria José" value={clienteNome} onChange={(e) => setClienteNome(e.target.value)} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px' }} />
-          </div>
-        )}
-
         <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: '16px', color: '#64748b', fontWeight: 'bold' }}>Subtotal:</span>
+          <span style={{ fontSize: '16px', color: '#64748b', fontWeight: 'bold' }}>Total Carrinho:</span>
           <span style={{ fontSize: '24px', color: '#1e1b4b', fontWeight: '900' }}>{formatoMoeda(calcularSubtotal())}</span>
         </div>
 
-        <button onClick={prepararVenda} style={{ background: '#4f46e5', color: 'white', border: 'none', padding: '16px', borderRadius: '8px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '18px' }}>
-          Fechar Venda <Plus size={20} />
+        <button id="btn-fechar-venda" onClick={prepararVenda} style={{ background: '#4f46e5', color: 'white', border: 'none', padding: '16px', borderRadius: '8px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '18px' }}>
+          Fechar Venda [F11] <Plus size={20} />
         </button>
       </div>
     </div>
@@ -457,101 +392,30 @@ export default function Venda() {
         </div>
       )}
 
-      {produtoSelecionado && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 4000, padding: '20px' }} onClick={() => setProdutoSelecionado(null)}>
-          <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '400px', overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }} onClick={(e) => e.stopPropagation()}>
-            <button onClick={() => setProdutoSelecionado(null)} style={{ position: 'absolute', top: '12px', right: '12px', background: 'rgba(0,0,0,0.5)', color: 'white', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 10 }}>
-              <X size={16} />
-            </button>
-            
-            <div style={{ width: '100%', height: '300px', display: 'flex', overflowX: 'auto', scrollSnapType: 'x mandatory', background: '#f8fafc', position: 'relative' }}>
-              {Number(produtoSelecionado.precoAntigo) > Number(produtoSelecionado.preco) && (
-                <div style={{ position: 'absolute', top: '12px', left: '12px', background: '#ef4444', color: 'white', fontSize: '12px', fontWeight: 'bold', padding: '6px 10px', borderRadius: '8px', zIndex: 5 }}>
-                  -{Math.round(((Number(produtoSelecionado.precoAntigo) - Number(produtoSelecionado.preco)) / Number(produtoSelecionado.precoAntigo)) * 100)}%
-                </div>
-              )}
-              {(() => {
-                const fotosParaMostrar = (produtoSelecionado.fotos && produtoSelecionado.fotos.length > 0) ? produtoSelecionado.fotos : (produtoSelecionado.imagem ? [produtoSelecionado.imagem] : [])
-                if (fotosParaMostrar.length === 0) {
-                  return <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><ImageIcon size={48} color="#cbd5e1" /></div>
-                }
-                return fotosParaMostrar.map((foto, idx) => (
-                  <img key={idx} src={foto.recortada || foto} alt={`Foto ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', flexShrink: 0, scrollSnapAlign: 'start' }} />
-                ))
-              })()}
-            </div>
-
-            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div>
-                <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase' }}>
-                  {produtoSelecionado.categorias ? produtoSelecionado.categorias.join(' • ') : produtoSelecionado.categoria}
-                </span>
-                <h2 style={{ fontSize: '20px', color: '#1e1b4b', margin: '4px 0 0 0', fontWeight: 'bold' }}>{produtoSelecionado.nome}</h2>
-                <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0 0', fontFamily: 'monospace' }}>Código: {produtoSelecionado.codigoBarras || 'Não cadastrado'}</p>
-              </div>
-              
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9', padding: '12px 0' }}>
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  {Number(produtoSelecionado.precoAntigo) > Number(produtoSelecionado.preco) && (
-                    <span style={{ fontSize: '14px', color: '#94a3b8', textDecoration: 'line-through', fontWeight: 'bold' }}>
-                      {formatoMoeda(produtoSelecionado.precoAntigo)}
-                    </span>
-                  )}
-                  <span style={{ fontSize: '24px', color: '#4f46e5', fontWeight: '900' }}>{formatoMoeda(produtoSelecionado.preco)}</span>
-                  
-                  {produtoSelecionado.precoPrazo && Number(produtoSelecionado.precoPrazo) > 0 && (
-                     <span style={{ fontSize: '13px', color: '#64748b', fontWeight: 'bold', marginTop: '2px' }}>
-                       A prazo: <span style={{ color: '#1e1b4b' }}>{formatoMoeda(produtoSelecionado.precoPrazo)}</span>
-                     </span>
-                  )}
-                </div>
-                <span style={{ background: produtoSelecionado.quantidade > 0 ? '#d1fae5' : '#fee2e2', color: produtoSelecionado.quantidade > 0 ? '#059669' : '#dc2626', padding: '6px 12px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold' }}>
-                  {produtoSelecionado.quantidade > 0 ? `Estoque: ${produtoSelecionado.quantidade}` : 'Esgotado'}
-                </span>
-              </div>
-
-              {produtoSelecionado.mostrarParcelamento && (
-                <div style={{ background: '#fffbeb', padding: '12px', borderRadius: '8px', border: '1px solid #fde68a', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <span style={{ fontSize: '13px', color: '#d97706', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <CreditCard size={16} />
-                    Cartão {produtoSelecionado.maxParcelas ? `em até ${produtoSelecionado.maxParcelas}x` : ''}
-                  </span>
-                  {produtoSelecionado.mostrarAvisoAcrescimo && (
-                    <span style={{ fontSize: '12px', color: '#b45309', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <AlertCircle size={14} /> Valores a prazo podem sofrer acréscimos.
-                    </span>
-                  )}
-                </div>
-              )}
-
-              <div>
-                <h4 style={{ fontSize: '13px', color: '#475569', fontWeight: 'bold', margin: '0 0 6px 0' }}>Descrição</h4>
-                <p style={{ fontSize: '14px', color: '#64748b', margin: 0, lineHeight: '1.5', maxHeight: '120px', overflowY: 'auto' }}>
-                  {produtoSelecionado.descricao || 'Nenhuma descrição detalhada disponível.'}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ÁREA ESQUERDA: CATÁLOGO DE PRODUTOS */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '24px', overflowY: isMobile ? 'visible' : 'auto', paddingRight: isMobile ? '0' : '16px' }}>
         <header>
           <h1 style={{ fontSize: isMobile ? '24px' : '28px', color: '#1e1b4b', margin: 0 }}>Frente de Caixa</h1>
-          <p style={{ color: '#64748b', marginTop: '4px', fontSize: isMobile ? '13px' : '15px' }}>Adicione os produtos no carrinho e finalize a venda</p>
+          <p style={{ color: '#64748b', marginTop: '4px', fontSize: isMobile ? '13px' : '15px' }}>Bipe com o leitor ou busque para adicionar ao carrinho</p>
         </header>
 
         {erro && <div style={{ background: '#fee2e2', color: '#ef4444', padding: '16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '500' }}><AlertCircle size={20} />{erro}</div>}
 
         <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexDirection: isMobile ? 'column' : 'row' }}>
-          <div style={{ display: 'flex', alignItems: 'center', background: 'white', padding: '10px 16px', borderRadius: '12px', width: '100%', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', background: 'white', padding: '10px 16px', borderRadius: '12px', width: '100%', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '2px solid #cbd5e1' }}>
             <Search size={20} color="#64748b" />
-            <input type="text" placeholder="Buscar produto..." value={busca} onChange={(e) => setBusca(e.target.value)} style={{ border: 'none', background: 'transparent', outline: 'none', marginLeft: '10px', width: '100%', color: '#1e1b4b', fontSize: '15px' }} />
+            <input 
+              ref={inputBuscaRef}
+              type="text" 
+              placeholder="Escanear código de barras (Leitor) ou digitar nome..." 
+              value={busca} 
+              onChange={(e) => setBusca(e.target.value)} 
+              onKeyDown={handleBuscaKeyDown}
+              style={{ border: 'none', background: 'transparent', outline: 'none', marginLeft: '10px', width: '100%', color: '#1e1b4b', fontSize: '15px' }} 
+            />
           </div>
         </div>
 
-        <div style={{ display: 'flex', overflowX: 'auto', gap: '10px', paddingBottom: '16px', marginBottom: '16px', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch', position: 'relative', zIndex: 10, flexShrink: 0 }}>
+        <div style={{ display: 'flex', overflowX: 'auto', gap: '10px', paddingBottom: '16px', marginBottom: '8px', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch', position: 'relative', zIndex: 10, flexShrink: 0 }}>
           {categoriasExibidas.map(cat => (
             <button 
               key={cat} 
@@ -599,51 +463,38 @@ export default function Venda() {
           )}
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '140px' : '200px'}, 1fr))`, gap: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '160px' : '180px'}, 1fr))`, gap: '16px' }}>
           {produtosFiltrados.map((produto) => {
-            const fotoPrincipal = pegarPrimeiraFoto(produto)
-            const temDesconto = Number(produto.precoAntigo) > Number(produto.preco)
-
             return (
               <div 
                 key={produto.id} 
-                onClick={() => setProdutoSelecionado(produto)}
-                style={{ background: 'white', borderRadius: '16px', padding: isMobile ? '12px' : '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', cursor: 'pointer' }}
+                onClick={() => adicionarAoCarrinho(produto)}
+                style={{ background: 'white', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 4px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '8px', cursor: 'pointer', transition: 'transform 0.1s' }}
+                onMouseOver={(e) => e.currentTarget.style.borderColor = '#4f46e5'}
+                onMouseOut={(e) => e.currentTarget.style.borderColor = '#e2e8f0'}
               >
-                <div style={{ width: '100%', height: isMobile ? '100px' : '140px', borderRadius: '8px', overflow: 'hidden', background: '#f8fafc', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-                  {temDesconto && (
-                    <div style={{ position: 'absolute', top: '8px', left: '8px', background: '#ef4444', color: 'white', fontSize: '10px', fontWeight: 'bold', padding: '4px 6px', borderRadius: '6px', zIndex: 5 }}>
-                      -{Math.round(((Number(produto.precoAntigo) - Number(produto.preco)) / Number(produto.precoAntigo)) * 100)}%
-                    </div>
+                <span style={{ fontSize: '12px', color: '#64748b', fontFamily: 'monospace', margin: 0, display: 'flex', justifyContent: 'space-between' }}>
+                  {produto.codigoBarras || 'Sem Código'}
+                  {Number(produto.precoAntigo) > Number(produto.preco) && (
+                    <span style={{ color: '#ef4444', fontWeight: 'bold' }}>Promoção</span>
                   )}
-                  {fotoPrincipal ? <img src={fotoPrincipal} alt={produto.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <ShoppingCart size={32} color="#cbd5e1" />}
-                </div>
-                <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {produto.categorias ? produto.categorias.join(' • ') : produto.categoria}
                 </span>
-                <h3 style={{ fontSize: isMobile ? '13px' : '14px', color: '#1e1b4b', fontWeight: 'bold', margin: '4px 0', lineHeight: '1.2' }}>{produto.nome}</h3>
                 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: 'auto', paddingTop: '8px', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '4px' : '0' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    {temDesconto && (
-                      <span style={{ fontSize: '11px', color: '#94a3b8', textDecoration: 'line-through', fontWeight: 'bold', marginBottom: '-2px' }}>
-                        {formatoMoeda(produto.precoAntigo)}
-                      </span>
-                    )}
-                    <span style={{ fontSize: isMobile ? '14px' : '16px', color: '#4f46e5', fontWeight: '800' }}>
-                      {formatoMoeda(produto.preco)}
-                    </span>
-                  </div>
-                  <span style={{ fontSize: '11px', color: produto.quantidade > 0 ? '#64748b' : '#ef4444', fontWeight: 'bold', alignSelf: isMobile ? 'flex-start' : 'center' }}>
-                    Qtd: {produto.quantidade}
-                  </span>
-                </div>
+                <h3 style={{ fontSize: '15px', color: '#1e1b4b', fontWeight: 'bold', margin: '4px 0 0 0', lineHeight: '1.2', flex: 1 }}>{produto.nome}</h3>
+                
+                <span style={{ fontSize: '18px', color: '#4f46e5', fontWeight: '900', marginTop: '4px' }}>
+                  {formatoMoeda(produto.preco)}
+                </span>
+                
+                <span style={{ fontSize: '12px', color: produto.quantidade > 0 ? '#64748b' : '#ef4444', fontWeight: 'bold' }}>
+                  Estoque: {produto.quantidade} un.
+                </span>
                 
                 <button 
                   onClick={(e) => { e.stopPropagation(); adicionarAoCarrinho(produto); }}
-                  style={{ background: '#f1f5f9', color: '#4f46e5', border: '1px solid #e2e8f0', padding: '10px', borderRadius: '8px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', fontWeight: 'bold', cursor: 'pointer', marginTop: '12px', fontSize: isMobile ? '13px' : '14px' }}
+                  style={{ background: '#f8fafc', color: '#4f46e5', border: '1px solid #cbd5e1', padding: '10px', borderRadius: '8px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', fontWeight: 'bold', cursor: 'pointer', marginTop: '8px', fontSize: '13px' }}
                 >
-                  <Plus size={16} /> {isMobile ? 'Add' : 'Adicionar'}
+                  <Plus size={16} /> Adicionar
                 </button>
               </div>
             )
@@ -651,14 +502,12 @@ export default function Venda() {
         </div>
       </div>
 
-      {/* ÁREA DIREITA: CARRINHO (SIDEBAR FIXA NO DESKTOP) */}
       {!isMobile && carrinho.length > 0 && (
         <div style={{ width: '400px', minWidth: '400px', background: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', height: '100%', boxSizing: 'border-box' }}>
           {renderCarrinho()}
         </div>
       )}
 
-      {/* CARRINHO NO MOBILE (MODAL DESLIZANTE) */}
       {isMobile && carrinhoAberto && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 5000, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'flex-end', animation: 'fadeIn 0.2s' }}>
           <div style={{ background: 'white', width: '90%', maxWidth: '400px', height: '100%', padding: '24px', display: 'flex', flexDirection: 'column', boxShadow: '-5px 0 15px rgba(0,0,0,0.1)', animation: 'slideInRight 0.3s' }}>
@@ -667,7 +516,6 @@ export default function Venda() {
         </div>
       )}
 
-      {/* BOTÃO FLUTUANTE DE CARRINHO (APENAS MOBILE) */}
       {isMobile && carrinho.length > 0 && (
         <button 
           onClick={() => setCarrinhoAberto(true)}
@@ -680,80 +528,124 @@ export default function Venda() {
         </button>
       )}
 
-      {/* MODAL DE FINALIZAÇÃO */}
       {modalConfirmacao && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 6000, padding: isMobile ? '16px' : '20px' }}>
-          <div style={{ background: 'white', padding: isMobile ? '24px' : '32px', borderRadius: '20px', width: '100%', maxWidth: '500px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)' }}>
+          <div style={{ background: 'white', padding: isMobile ? '24px' : '32px', borderRadius: '20px', width: '100%', maxWidth: '600px', maxHeight: '95vh', overflowY: 'auto', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)' }}>
             
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #f1f5f9', paddingBottom: '16px' }}>
               <h3 style={{ fontSize: isMobile ? '18px' : '22px', color: '#1e1b4b', display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}>
-                <Receipt size={28} color="#4f46e5" /> Resumo da Venda
+                <Receipt size={28} color="#4f46e5" /> Finalizar Venda
               </h3>
               <button onClick={() => setModalConfirmacao(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#94a3b8' }}><X size={28} /></button>
             </div>
 
-            <div style={{ marginBottom: '24px' }}>
-              <h4 style={{ fontSize: '12px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase', marginBottom: '12px' }}>Itens Registrados</h4>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', maxHeight: '150px', overflowY: 'auto' }}>
-                {carrinho.map(item => (
-                  <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: '#1e1b4b' }}>
-                    <span>{item.quantidadeComprada}x {item.nome}</span>
-                    <span style={{ fontWeight: '600' }}>{formatoMoeda(getPrecoItem(item, formaPagamento) * item.quantidadeComprada)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', fontSize: '15px' }}>
-              <span style={{ color: '#64748b', fontWeight: '600' }}>Tipo de Venda:</span>
-              <span style={{ color: formaPagamento === 'Anotar (Fiado)' ? '#ef4444' : '#1e1b4b', fontWeight: 'bold', background: formaPagamento === 'Anotar (Fiado)' ? '#fee2e2' : '#e0e7ff', padding: '4px 12px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                {formaPagamento === 'Anotar (Fiado)' ? <><UserCheck size={16}/> Fiado {clienteSelecionado?.nome}</> : formaPagamento}
-              </span>
-            </div>
-
-            <div style={{ background: '#f1f5f9', padding: '16px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>
+            <div style={{ background: '#f1f5f9', padding: '16px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '15px', color: '#64748b', fontWeight: '600' }}>Subtotal:</span>
                 <span style={{ fontSize: '18px', color: '#1e1b4b', fontWeight: 'bold' }}>{formatoMoeda(calcularSubtotal())}</span>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center' }}>
-                <span style={{ fontSize: '15px', color: '#64748b', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}><Tag size={16} /> Desconto:</span>
-                <div style={{ display: 'flex', gap: '8px', width: isMobile ? '100%' : 'auto' }}>
-                  <select value={descontoTipo} onChange={(e) => setDescontoTipo(e.target.value)} style={{ padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', cursor: 'pointer', background: 'white' }}>
-                    <option value="R$">- R$</option>
-                    <option value="%">- %</option>
-                  </select>
-                  <input 
-                    type="number" min="0" placeholder="0.00" value={descontoValor} onChange={(e) => setDescontoValor(e.target.value)} 
-                    style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px', width: isMobile ? '100%' : '90px', textAlign: 'right' }} 
-                  />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '15px', color: '#1e1b4b', fontWeight: 'bold', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={aplicarDesconto} onChange={(e) => {
+                    setAplicarDesconto(e.target.checked);
+                    if(!e.target.checked) {
+                      setDescontoValor('');
+                      setSenhaDesconto('');
+                    }
+                  }} style={{ width: '18px', height: '18px' }} />
+                  Aplica desconto?
+                </label>
+                
+                {aplicarDesconto && (
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginTop: '4px' }}>
+                    <select value={descontoTipo} onChange={(e) => setDescontoTipo(e.target.value)} style={{ padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', cursor: 'pointer', background: 'white' }}>
+                      <option value="R$">R$</option>
+                      <option value="%">%</option>
+                    </select>
+                    <input 
+                      type="number" min="0" placeholder="0.00" value={descontoValor} onChange={(e) => setDescontoValor(e.target.value)} 
+                      style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px', width: '90px', textAlign: 'right' }} 
+                    />
+                    {parseFloat(descontoValor) > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'white', padding: '0 8px', borderRadius: '8px', border: '1px solid #ef4444' }}>
+                        <Lock size={14} color="#ef4444"/>
+                        <input 
+                          type="password" placeholder="Senha (0000)" value={senhaDesconto} onChange={(e) => setSenhaDesconto(e.target.value)}
+                          style={{ border: 'none', outline: 'none', width: '90px', padding: '8px 0', fontSize: '13px' }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '2px dashed #cbd5e1', paddingTop: '12px' }}>
+                <span style={{ fontSize: '18px', color: '#1e1b4b', fontWeight: 'bold' }}>TOTAL A PAGAR:</span>
+                <span style={{ fontSize: '28px', color: '#ef4444', fontWeight: '900' }}>
+                  {formatoMoeda(calcularTotalFinal())}
+                </span>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '20px' }}>
+              <h4 style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase', marginBottom: '12px' }}>Pagamentos Múltiplos</h4>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <label style={{ flex: 1, fontSize: '14px', fontWeight: '600', color: '#475569' }}>Dinheiro:</label>
+                  <input type="number" placeholder="0.00" value={pagamentos.dinheiro} onChange={e => setPagamentos({...pagamentos, dinheiro: e.target.value})} style={{ width: '120px', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', textAlign: 'right', fontSize: '15px' }} />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <label style={{ flex: 1, fontSize: '14px', fontWeight: '600', color: '#475569' }}>Pix:</label>
+                  <input type="number" placeholder="0.00" value={pagamentos.pix} onChange={e => setPagamentos({...pagamentos, pix: e.target.value})} style={{ width: '120px', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', textAlign: 'right', fontSize: '15px' }} />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <label style={{ flex: 1, fontSize: '14px', fontWeight: '600', color: '#475569' }}>Cartão Créd.:</label>
+                  <input type="number" placeholder="0.00" value={pagamentos.cartaoCredito} onChange={e => setPagamentos({...pagamentos, cartaoCredito: e.target.value})} style={{ width: '120px', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', textAlign: 'right', fontSize: '15px' }} />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <label style={{ flex: 1, fontSize: '14px', fontWeight: '600', color: '#475569' }}>Cartão Déb.:</label>
+                  <input type="number" placeholder="0.00" value={pagamentos.cartaoDebito} onChange={e => setPagamentos({...pagamentos, cartaoDebito: e.target.value})} style={{ width: '120px', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', textAlign: 'right', fontSize: '15px' }} />
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '2px dashed #cbd5e1', paddingTop: '16px' }}>
-                <span style={{ fontSize: isMobile ? '15px' : '18px', color: '#1e1b4b', fontWeight: 'bold' }}>
-                  {formaPagamento === 'Anotar (Fiado)' ? 'Lançar:' : 'Receber:'}
-                </span>
-                <span style={{ fontSize: isMobile ? '22px' : '28px', color: formaPagamento === 'Anotar (Fiado)' ? '#ef4444' : '#10b981', fontWeight: '900' }}>
-                  {formatoMoeda(calcularTotalFinal())}
-                </span>
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px', border: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '14px', color: '#475569', fontWeight: '600' }}>Total Pago (+):</span>
+                  <span style={{ fontSize: '18px', color: '#1e1b4b', fontWeight: 'bold' }}>{formatoMoeda(calcularTotalPago())}</span>
+                </div>
+                
+                {calcularTotalPago() > calcularTotalFinal() && parseFloat(pagamentos.dinheiro) > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#d1fae5', padding: '10px', borderRadius: '8px', border: '1px solid #10b981', marginTop: '8px' }}>
+                    <span style={{ fontSize: '18px', color: '#047857', fontWeight: '900' }}>TROCO:</span>
+                    <span style={{ fontSize: '24px', color: '#047857', fontWeight: '900' }}>
+                      {formatoMoeda(calcularTotalPago() - calcularTotalFinal())}
+                    </span>
+                  </div>
+                )}
+                
+                {calcularTotalPago() < calcularTotalFinal() && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                    <span style={{ fontSize: '14px', color: '#ef4444', fontWeight: '600' }}>Falta pagar:</span>
+                    <span style={{ fontSize: '16px', color: '#ef4444', fontWeight: 'bold' }}>{formatoMoeda(calcularTotalFinal() - calcularTotalPago())}</span>
+                  </div>
+                )}
               </div>
             </div>
 
             <form onSubmit={confirmarEFinalizarVenda} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#475569', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <UserCheck size={16}/> Vendedor / Responsável
+                  <UserCheck size={16}/> Vendedor / Responsável (Opcional)
                 </label>
                 <select 
-                  required
                   value={vendedorNome} 
                   onChange={(e) => setVendedorNome(e.target.value)} 
-                  style={{ padding: '14px', borderRadius: '8px', border: '2px solid #cbd5e1', outline: 'none', fontSize: '15px', background: '#f8fafc', cursor: 'pointer' }} 
+                  style={{ padding: '14px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px', background: '#f8fafc', cursor: 'pointer' }} 
                 >
-                  <option value="" disabled>
-                    {listaVendedores.length > 0 ? "Selecione quem está finalizando a venda..." : "Cadastre vendedores nas configurações primeiro"}
+                  <option value="">
+                    {listaVendedores.length > 0 ? "Selecione o vendedor..." : "Cadastre vendedores nas configurações"}
                   </option>
                   {listaVendedores.map(v => (
                     <option key={v} value={v}>{v}</option>
@@ -765,9 +657,9 @@ export default function Venda() {
                 <button type="button" disabled={processando} onClick={() => setModalConfirmacao(false)} style={{ flex: 1, background: 'transparent', color: '#64748b', border: '2px solid #e2e8f0', padding: '16px', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px' }}>
                   Voltar
                 </button>
-                <button type="submit" disabled={processando} style={{ flex: 2, background: processando ? '#94a3b8' : (formaPagamento === 'Anotar (Fiado)' ? '#ef4444' : '#10b981'), color: 'white', border: 'none', padding: '16px', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>
+                <button id="btn-confirmar-venda" type="submit" disabled={processando || calcularTotalPago() < calcularTotalFinal() - 0.01} style={{ flex: 2, background: (processando || calcularTotalPago() < calcularTotalFinal() - 0.01) ? '#94a3b8' : '#10b981', color: 'white', border: 'none', padding: '16px', borderRadius: '10px', fontWeight: 'bold', cursor: (processando || calcularTotalPago() < calcularTotalFinal() - 0.01) ? 'not-allowed' : 'pointer', fontSize: '15px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>
                   <CheckCircle size={20} /> 
-                  {processando ? 'Processando...' : (formaPagamento === 'Anotar (Fiado)' ? 'Confirmar e Pendurar' : 'Confirmar Venda')}
+                  {processando ? 'Processando...' : 'Confirmar Venda [F11]'}
                 </button>
               </div>
             </form>

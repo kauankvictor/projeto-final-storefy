@@ -14,14 +14,14 @@ export default function Financeiro() {
   const [carregando, setCarregando] = useState(true)
   
   const [vendasFiltradas, setVendasFiltradas] = useState([])
-  const [dadosLoja, setDadosLoja] = useState({ nomeLoja: 'Storefy', ceo: 'Administrador', telefone: '-', email: '-', endereco: 'Endereço não informado' })
+  const [dadosLoja, setDadosLoja] = useState({ nomeLoja: 'Storefy', ceo: 'Administrador', telefone: '', email: '', endereco: 'Endereço não informado' })
   const [metricas, setMetricas] = useState({
     faturamentoTotal: 0,
     quantidadeVendas: 0,
     pix: 0,
-    cartao: 0,
-    dinheiro: 0,
-    fiado: 0
+    cartaoCredito: 0,
+    cartaoDebito: 0,
+    dinheiro: 0
   })
 
   const [capitalNaRua, setCapitalNaRua] = useState(0)
@@ -91,7 +91,7 @@ export default function Financeiro() {
         const querySnapshot = await getDocs(collection(db, "historico"))
         const historicoNuvem = querySnapshot.docs.map(doc => doc.data())
 
-        const apenasVendas = historicoNuvem.filter(reg => reg.tipo === 'VENDA' || reg.tipo === 'FIADO')
+        const apenasVendas = historicoNuvem.filter(reg => reg.tipo === 'VENDA' || reg.tipo === 'FIADO' || reg.tipo === 'MISTA (Com Fiado)')
 
         const [anoI, mesI, diaI] = dataInicial.split('-')
         const [anoF, mesF, diaF] = dataFinal.split('-')
@@ -106,20 +106,37 @@ export default function Financeiro() {
         })
 
         let faturamento = 0
-        let formas = { pix: 0, cartao: 0, dinheiro: 0, fiado: 0 }
+        let formas = { pix: 0, cartaoCredito: 0, cartaoDebito: 0, dinheiro: 0 }
 
         filtradas.forEach(venda => {
           const valor = Number(venda.total) || 0
-          const formaNorm = String(venda.formaPagamento || '').toLowerCase()
-
-          if (venda.tipo === 'VENDA') {
+          
+          if (venda.tipo === 'VENDA' || venda.tipo === 'MISTA (Com Fiado)') {
             faturamento += valor
-            if (formaNorm.includes('pix')) formas.pix += valor
-            else if (formaNorm.includes('cart') || formaNorm.includes('créd') || formaNorm.includes('déb')) formas.cartao += valor
-            else if (formaNorm.includes('dinh') || formaNorm.includes('espéc')) formas.dinheiro += valor
-            else formas.dinheiro += valor 
-          } else if (venda.tipo === 'FIADO') {
-            formas.fiado += valor
+            
+            if (venda.pagamentosDetalhados) {
+              const pPix = parseFloat(venda.pagamentosDetalhados.pix) || 0
+              const pCC = parseFloat(venda.pagamentosDetalhados.cartaoCredito) || 0
+              const pCD = parseFloat(venda.pagamentosDetalhados.cartaoDebito) || 0
+              let pDin = parseFloat(venda.pagamentosDetalhados.dinheiro) || 0
+              const pFiado = parseFloat(venda.pagamentosDetalhados.fiado) || 0
+              
+              const totalPagoFormas = pPix + pCC + pCD + pDin + pFiado
+              const troco = totalPagoFormas > valor ? totalPagoFormas - valor : 0
+              pDin = pDin - troco 
+              
+              formas.pix += pPix
+              formas.cartaoCredito += pCC
+              formas.cartaoDebito += pCD
+              formas.dinheiro += (pDin > 0 ? pDin : 0)
+            } else {
+              const formaNorm = String(venda.formaPagamento || '').toLowerCase()
+              if (formaNorm.includes('pix')) formas.pix += valor
+              else if (formaNorm.includes('crédito')) formas.cartaoCredito += valor
+              else if (formaNorm.includes('débito')) formas.cartaoDebito += valor
+              else if (formaNorm.includes('cart')) { formas.cartaoCredito += valor }
+              else formas.dinheiro += valor
+            }
           }
         })
 
@@ -236,7 +253,7 @@ export default function Financeiro() {
               <h1>${dadosLoja.nomeLoja || 'Loja Storefy'}</h1>
               <p>CEO: ${dadosLoja.ceo || 'Não informado'}</p>
               <p>Endereço: ${dadosLoja.endereco || 'Endereço não cadastrado'}</p>
-              <p>Contato: ${dadosLoja.telefone || '-'} | ${dadosLoja.email || '-'}</p>
+              <p>Contato: ${dadosLoja.telefone || ''} | ${dadosLoja.email || ''}</p>
             </div>
             <div style="text-align: right;">
               <p><strong>Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}</p>
@@ -271,8 +288,8 @@ export default function Financeiro() {
               <tbody>
                 <tr><td>Dinheiro à Vista</td><td><strong>${formatoMoeda(metricas.dinheiro)}</strong></td></tr>
                 <tr><td>Transferência Pix</td><td><strong>${formatoMoeda(metricas.pix)}</strong></td></tr>
-                <tr><td>Cartão (Crédito/Débito)</td><td><strong>${formatoMoeda(metricas.cartao)}</strong></td></tr>
-                <tr><td>Fiado Gerado no Período</td><td style="color: #ef4444;"><strong>${formatoMoeda(metricas.fiado)}</strong></td></tr>
+                <tr><td>Cartão de Crédito</td><td><strong>${formatoMoeda(metricas.cartaoCredito)}</strong></td></tr>
+                <tr><td>Cartão de Débito</td><td><strong>${formatoMoeda(metricas.cartaoDebito)}</strong></td></tr>
               </tbody>
             </table>
           </div>
@@ -283,9 +300,9 @@ export default function Financeiro() {
               vendasFiltradas.map(v => `
                 <div class="item-venda">
                   <div>
-                    <strong>Data/Hora:</strong> ${v.data} - ${v.hora} | 
-                    <strong>Vendedor:</strong> ${v.vendedor || 'Não inf.'} | 
-                    <strong>Cliente:</strong> ${v.cliente?.nome || 'Consumidor Final'} <br/>
+                    <strong>ID:</strong> #${v.idRegistro || 'N/A'} | 
+                    <strong>Data/Hora:</strong> ${v.data} ${v.hora} | 
+                    <strong>Vendedor:</strong> ${v.vendedor || 'Não inf.'} <br/>
                     <small style="color: #64748b;">Meio: ${v.formaPagamento}</small>
                   </div>
                   <div style="font-weight: bold; color: ${v.tipo === 'FIADO' ? '#ef4444' : '#10b981'}; display: flex; flex-direction: column; align-items: flex-end;">
@@ -319,18 +336,18 @@ export default function Financeiro() {
       return
     }
 
-    let csvContent = "Data;Hora;Vendedor;Cliente;Forma Pagamento;Desconto;Valor Total\n"
+    let csvContent = "ID;Data;Hora;Vendedor;Forma Pagamento;Desconto;Valor Total\n"
 
     vendasFiltradas.forEach(v => {
+      const id = v.idRegistro || ''
       const data = v.data || ''
       const hora = v.hora || ''
       const vendedor = v.vendedor || 'Não informado'
-      const cliente = v.cliente?.nome || 'Consumidor Final'
       const pagamento = v.formaPagamento || ''
       const desconto = Number(v.desconto || 0).toFixed(2).replace('.', ',')
       const total = Number(v.total || 0).toFixed(2).replace('.', ',')
 
-      csvContent += `"${data}";"${hora}";"${vendedor}";"${cliente}";"${pagamento}";"${desconto}";"${total}"\n`
+      csvContent += `"${id}";"${data}";"${hora}";"${vendedor}";"${pagamento}";"${desconto}";"${total}"\n`
     })
 
     const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' })
@@ -455,13 +472,13 @@ export default function Financeiro() {
                 </div>
 
                 <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
-                  <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Cartões</span>
-                  <h4 style={{ fontSize: isMobile ? '16px' : '20px', color: '#1e1b4b', fontWeight: '800', margin: '6px 0 0 0' }}>{formatarBRL(metricas.cartao)}</h4>
+                  <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Cartão Crédito</span>
+                  <h4 style={{ fontSize: isMobile ? '16px' : '20px', color: '#1e1b4b', fontWeight: '800', margin: '6px 0 0 0' }}>{formatarBRL(metricas.cartaoCredito)}</h4>
                 </div>
-
-                <div style={{ background: '#fef2f2', padding: '16px', borderRadius: '14px', border: '1px solid #fee2e2' }}>
-                  <span style={{ fontSize: '12px', color: '#ef4444', fontWeight: 'bold', textTransform: 'uppercase' }}>Fiado Lançado</span>
-                  <h4 style={{ fontSize: isMobile ? '16px' : '20px', color: '#ef4444', fontWeight: '800', margin: '6px 0 0 0' }}>{formatarBRL(metricas.fiado)}</h4>
+                
+                <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
+                  <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Cartão Débito</span>
+                  <h4 style={{ fontSize: isMobile ? '16px' : '20px', color: '#1e1b4b', fontWeight: '800', margin: '6px 0 0 0' }}>{formatarBRL(metricas.cartaoDebito)}</h4>
                 </div>
               </div>
             </div>
@@ -488,7 +505,7 @@ export default function Financeiro() {
                       </div>
                       {vendedor.vendasPendentesFiado > 0 && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '12px', color: '#ef4444' }}>Aberto no Fiado:</span>
+                          <span style={{ fontSize: '12px', color: '#ef4444' }}>Aberto no Fiado (Geral):</span>
                           <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#ef4444' }}>{formatarBRL(vendedor.vendasPendentesFiado)}</span>
                         </div>
                       )}
