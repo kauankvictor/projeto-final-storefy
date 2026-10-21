@@ -24,11 +24,20 @@ export default function Estoque() {
   const [categoriaExportacao, setCategoriaExportacao] = useState('Todas')
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
+  // ================= ESTADOS DA PAGINAÇÃO =================
+  const [paginaAtual, setPaginaAtual] = useState(1)
+  const itensPorPagina = 24 // Exibe 24 produtos por página
+
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768)
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
+
+  // Voltar para a página 1 sempre que o usuário pesquisar ou mudar de categoria
+  useEffect(() => {
+    setPaginaAtual(1)
+  }, [busca, categoriaFiltro])
 
   // Atalhos de Teclado
   useEffect(() => {
@@ -164,6 +173,12 @@ export default function Estoque() {
 
     return matchBusca && matchCategoria
   })
+
+  // ================= LÓGICA DE PAGINAÇÃO =================
+  const totalPaginas = Math.ceil(produtosFiltrados.length / itensPorPagina)
+  const indexUltimoItem = paginaAtual * itensPorPagina
+  const indexPrimeiroItem = indexUltimoItem - itensPorPagina
+  const produtosPaginados = produtosFiltrados.slice(indexPrimeiroItem, indexUltimoItem)
 
   const getProdutosParaExportar = () => {
     return produtos.filter(produto => {
@@ -509,8 +524,8 @@ export default function Estoque() {
                 </span>
                 <h2 style={{ fontSize: '20px', color: '#1e1b4b', margin: '4px 0 0 0', fontWeight: 'bold' }}>{produtoSelecionado.nome}</h2>
                 
-                <div style={{ marginTop: '4px', fontSize: '13px', color: '#94a3b8', fontFamily: 'monospace' }}>
-                  Cód: {produtoSelecionado.codigoBarras || 'S/N'}
+                <div style={{ marginTop: '4px', fontSize: '15px', color: '#64748b', fontFamily: 'monospace', fontWeight: 'bold' }}>
+                  {produtoSelecionado.codigoBarras || 'S/N'}
                 </div>
               </div>
               
@@ -612,6 +627,31 @@ export default function Estoque() {
             <Settings size={16} /> Gerenciar
           </button>
         </div>
+
+        {/* CONTROLES DE PAGINAÇÃO ABAIXO DAS CATEGORIAS */}
+        {totalPaginas > 1 && (
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
+            {Array.from({ length: totalPaginas }, (_, i) => i + 1).map(num => (
+              <button
+                key={num}
+                onClick={() => setPaginaAtual(num)}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  background: paginaAtual === num ? '#2563eb' : '#ffffff',
+                  color: paginaAtual === num ? 'white' : '#64748b',
+                  border: paginaAtual === num ? 'none' : '1px solid #e2e8f0',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  transition: '0.2s',
+                  boxShadow: paginaAtual === num ? '0 4px 6px rgba(37, 99, 235, 0.2)' : 'none'
+                }}
+              >
+                {num}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {carregando ? (
@@ -620,7 +660,7 @@ export default function Estoque() {
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '160px' : '240px'}, 1fr))`, gap: '16px' }}>
-          {produtosFiltrados.map((produto) => {
+          {produtosPaginados.map((produto) => {
             const temDesconto = Number(produto.precoAntigo) > Number(produto.preco)
             const custo = Number(produto.custo) || 0
             const preco = Number(produto.preco) || 0
@@ -655,8 +695,8 @@ export default function Estoque() {
                 </div>
 
                 <div style={{ marginBottom: '8px', marginTop: '2px' }}>
-                  <span style={{ fontSize: '12px', color: '#94a3b8', fontFamily: 'monospace' }}>
-                    Cód: {produto.codigoBarras || 'S/N'}
+                  <span style={{ fontSize: '14px', color: '#64748b', fontFamily: 'monospace', fontWeight: 'bold' }}>
+                    {produto.codigoBarras || 'S/N'}
                   </span>
                 </div>
                 

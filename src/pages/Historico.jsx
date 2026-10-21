@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { History, ShoppingBag, Edit, Calendar, Clock, User, CreditCard, Filter, Search, Package, ArrowRight, X, Lock, FileText, Settings, AlertOctagon } from 'lucide-react'
+import { History, ShoppingBag, Calendar, Clock, User, CreditCard, Filter, Search, Package, ArrowRight, X, Lock, FileText, Settings, AlertOctagon, FileDown } from 'lucide-react'
 
 import { collection, getDocs, doc, getDoc, setDoc, updateDoc, query, orderBy } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
@@ -13,7 +13,6 @@ export default function Historico() {
   const [tipoFiltro, setTipoFiltro] = useState('TODOS')
   const [carregando, setCarregando] = useState(true)
 
-  // ================= ESTADOS DA PAGINAÇÃO =================
   const [paginaAtual, setPaginaAtual] = useState(1)
   const itensPorPagina = 25
 
@@ -25,6 +24,9 @@ export default function Historico() {
   const [configReciboAberto, setConfigReciboAberto] = useState(false)
   const [dadosLoja, setDadosLoja] = useState({ nomeLoja: '', endereco: '', telefone: '' })
 
+  const [modalRelatorio, setModalRelatorio] = useState(false)
+  const [filtroRelatorio, setFiltroRelatorio] = useState({ dataInicio: '', dataFim: '' })
+
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
   useEffect(() => {
@@ -33,7 +35,6 @@ export default function Historico() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  // Voltar para a página 1 sempre que o usuário pesquisar ou filtrar algo
   useEffect(() => {
     setPaginaAtual(1)
   }, [busca, tipoFiltro, dataFiltro])
@@ -125,7 +126,6 @@ export default function Historico() {
     if (window.confirm('Confirmar o estorno da venda na nuvem? Os produtos retornarão ao estoque, o cliente será atualizado e o registro ficará marcado como CANCELADO no histórico.')) {
       
       try {
-        // Devolver itens ao estoque
         if (vendaParaCancelar.itens && vendaParaCancelar.itens.length > 0) {
           for (const itemVendido of vendaParaCancelar.itens) {
             const produtoRef = doc(db, "produtos", itemVendido.id)
@@ -139,7 +139,6 @@ export default function Historico() {
           }
         }
 
-        // Remover da conta do cliente se for fiado (caso existam registros antigos)
         if (vendaParaCancelar.tipo === 'FIADO' && vendaParaCancelar.cliente?.id) {
           const clienteRef = doc(db, "clientes", vendaParaCancelar.cliente.id)
           const clienteDoc = await getDoc(clienteRef)
@@ -153,14 +152,12 @@ export default function Historico() {
           }
         }
 
-        // Em vez de deletar, atualizamos o registro para ESTORNO
         const infoEstorno = `Estornado em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`
         await updateDoc(doc(db, "historico", idFirestore), { 
           tipo: 'ESTORNO',
           detalhesCancelamento: infoEstorno
         })
         
-        // Atualiza a interface local
         setRegistros(registros.map(h => 
           h.idFirestore === idFirestore ? { ...h, tipo: 'ESTORNO', detalhesCancelamento: infoEstorno } : h
         ))
@@ -212,13 +209,112 @@ export default function Historico() {
     return true
   })
 
-  // ================= LÓGICA DE PAGINAÇÃO =================
   const totalPaginas = Math.ceil(registrosFiltrados.length / itensPorPagina)
   const indexUltimoItem = paginaAtual * itensPorPagina
   const indexPrimeiroItem = indexUltimoItem - itensPorPagina
   const registrosPaginados = registrosFiltrados.slice(indexPrimeiroItem, indexUltimoItem)
 
-  const formatoMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor)
+  const formatoMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(valor) || 0)
+
+  const parseDataBR = (dataStr) => {
+    if (!dataStr) return new Date(0)
+    const [dia, mes, ano] = dataStr.split('/')
+    return new Date(`${ano}-${mes}-${dia}T00:00:00`)
+  }
+
+  const gerarPDFVendas = (e) => {
+    e.preventDefault()
+    
+    if (!filtroRelatorio.dataInicio || !filtroRelatorio.dataFim) {
+      alert("Por favor, selecione a data inicial e final.")
+      return
+    }
+
+    const dataInicio = new Date(`${filtroRelatorio.dataInicio}T00:00:00`)
+    const dataFim = new Date(`${filtroRelatorio.dataFim}T23:59:59`)
+
+    const vendasDoPeriodo = registros.filter(reg => {
+      if (reg.tipo === 'SISTEMA' || reg.tipo === 'ESTOQUE' || reg.tipo === 'ESTORNO') return false
+      const dataReg = parseDataBR(reg.data)
+      return dataReg >= dataInicio && dataReg <= dataFim
+    })
+
+    if (vendasDoPeriodo.length === 0) {
+      alert("Nenhuma venda encontrada para este período.")
+      return
+    }
+
+    const totalVendido = vendasDoPeriodo.reduce((acc, curr) => acc + (Number(curr.total) || 0), 0)
+
+    const janelaImpressao = window.open('', '_blank')
+    const htmlPDF = `
+      <html>
+        <head>
+          <title>Relatório de Vendas</title>
+          <style>
+            body { font-family: 'Helvetica', 'Arial', sans-serif; color: #1e293b; padding: 40px; margin: 0; line-height: 1.5; }
+            .header { border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 30px; display: flex; justify-content: space-between; }
+            .header h1 { margin: 0; color: #1e1b4b; font-size: 24px; }
+            .header p { margin: 4px 0; color: #64748b; font-size: 14px; }
+            .tabela-vendas { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+            .tabela-vendas th, .tabela-vendas td { border: 1px solid #e2e8f0; padding: 10px; text-align: left; font-size: 13px; }
+            .tabela-vendas th { background: #f8fafc; color: #475569; text-transform: uppercase; font-size: 12px; }
+            .total-geral { text-align: right; font-size: 20px; color: #1e1b4b; font-weight: bold; background: #f1f5f9; padding: 16px; border-radius: 8px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div>
+              <h1>Relatório de Vendas Concluídas</h1>
+              <p>Período: ${filtroRelatorio.dataInicio.split('-').reverse().join('/')} até ${filtroRelatorio.dataFim.split('-').reverse().join('/')}</p>
+            </div>
+            <div style="text-align: right;">
+              <p>Loja: ${dadosLoja.nomeLoja || 'Não configurado'}</p>
+              <p>Emitido em: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}</p>
+            </div>
+          </div>
+
+          <table class="tabela-vendas">
+            <thead>
+              <tr>
+                <th>Cód. Registro</th>
+                <th>Data/Hora</th>
+                <th>Itens (Qtd)</th>
+                <th>Pagamento</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${vendasDoPeriodo.map(v => {
+                // Adicionado o espaço entre a quantidade e o nome do item
+                const itensTxt = v.itens?.map(i => `${i.quantidadeComprada}x${i.nome}`).join(' | ') || 'Desconhecido';
+                return `
+                <tr>
+                  <td>#${v.idRegistro}</td>
+                  <td>${v.data}${v.hora}</td>
+                  <td style="max-width: 300px;">${itensTxt}</td>
+                  <td>${v.formaPagamento}</td>
+                  <td style="font-weight: bold;">${formatoMoeda(v.total)}</td>
+                </tr>
+              `}).join('')}
+            </tbody>
+          </table>
+
+          <div class="total-geral">
+            Total do Período: <span style="color: #10b981;">${formatoMoeda(totalVendido)}</span>
+          </div>
+
+          <script>
+            window.onload = function() { window.print(); }
+          </script>
+        </body>
+      </html>
+    `
+    
+    janelaImpressao.document.write(htmlPDF)
+    janelaImpressao.document.close()
+    setModalRelatorio(false)
+  }
 
   if (carregando) {
     return <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', fontWeight: 'bold' }}>Buscando atividades no servidor do Google...</div>
@@ -229,11 +325,17 @@ export default function Historico() {
       
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', flexDirection: isMobile ? 'column' : 'row', gap: '16px' }}>
         <div>
-          <h1 style={{ fontSize: isMobile ? '24px' : '28px', color: '#1e1b4b' }}>Histórico de Atividades</h1>
-          <p style={{ color: '#64748b', marginTop: '4px', fontSize: isMobile ? '14px' : '16px' }}>Auditoria em tempo real de transações e alterações</p>
+          <h1 style={{ fontSize: isMobile ? '24px' : '28px', color: '#1e1b4b', margin: 0 }}>Histórico de Atividades</h1>
+          <p style={{ color: '#64748b', marginTop: '4px', fontSize: isMobile ? '14px' : '16px', margin: 0 }}>Auditoria em tempo real de transações e alterações</p>
         </div>
 
         <div style={{ display: 'flex', gap: '10px', width: isMobile ? '100%' : 'auto', flexDirection: isMobile ? 'column' : 'row' }}>
+          <button 
+            onClick={() => setModalRelatorio(true)}
+            style={{ background: '#f8fafc', color: '#2563eb', border: '1px solid #bfdbfe', padding: '10px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontWeight: '600', cursor: 'pointer', width: '100%', transition: '0.2s' }}
+          >
+            <FileDown size={18} /> Relatório PDF
+          </button>
           <button 
             onClick={() => setConfigReciboAberto(true)}
             style={{ background: '#f8fafc', color: '#1e1b4b', border: '1px solid #cbd5e1', padding: '10px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontWeight: '600', cursor: 'pointer', width: '100%' }}
@@ -242,6 +344,46 @@ export default function Historico() {
           </button>
         </div>
       </header>
+
+      {modalRelatorio && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(15, 23, 42, 0.8)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', boxSizing: 'border-box' }}>
+          <div style={{ background: '#ffffff', width: '100%', maxWidth: '400px', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, color: '#1e1b4b', fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FileDown size={20} /> Gerar Relatório PDF
+              </h3>
+              <button onClick={() => setModalRelatorio(false)} style={{ background: 'transparent', border: 'none', color: '#64748b', cursor: 'pointer', padding: 0 }}><X size={24}/></button>
+            </div>
+            
+            <form onSubmit={gerarPDFVendas} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#1e1b4b' }}>Data Inicial</label>
+                <input 
+                  type="date" 
+                  value={filtroRelatorio.dataInicio} 
+                  onChange={e => setFiltroRelatorio({...filtroRelatorio, dataInicio: e.target.value})} 
+                  style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#f8fafc', outline: 'none', fontSize: '15px' }} 
+                  required
+                />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#1e1b4b' }}>Data Final</label>
+                <input 
+                  type="date" 
+                  value={filtroRelatorio.dataFim} 
+                  onChange={e => setFiltroRelatorio({...filtroRelatorio, dataFim: e.target.value})} 
+                  style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#f8fafc', outline: 'none', fontSize: '15px' }} 
+                  required
+                />
+              </div>
+
+              <button type="submit" style={{ width: '100%', background: '#2563eb', border: 'none', color: '#ffffff', padding: '14px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px', marginTop: '8px' }}>
+                Gerar PDF
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       <div style={{ background: 'white', padding: isMobile ? '16px' : '20px', borderRadius: '16px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', border: '1px solid #f1f5f9', display: 'flex', gap: '16px', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center' }}>
         
@@ -272,7 +414,6 @@ export default function Historico() {
         </div>
       </div>
 
-      {/* CONTROLES DE PAGINAÇÃO (TOPO) */}
       {totalPaginas > 1 && (
         <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '-8px' }}>
           {Array.from({ length: totalPaginas }, (_, i) => i + 1).map(num => (
@@ -307,7 +448,6 @@ export default function Historico() {
           registrosPaginados.map((reg, index) => {
             const ehEstorno = reg.tipo === 'ESTORNO'
             const ehEstoque = reg.tipo === 'SISTEMA' || reg.tipo === 'ESTOQUE'
-            // Engloba fiados/baixas antigas como venda normal se ainda existirem no banco
             const ehVendaNormal = (reg.tipo === 'VENDA' || reg.tipo === 'FIADO' || reg.tipo === 'BAIXA') && !ehEstorno && !ehEstoque
 
             let labelTipo = 'Alteração de Estoque'
@@ -328,6 +468,12 @@ export default function Historico() {
             }
 
             const mostrarComoEstruturaVenda = ehVendaNormal || ehEstorno
+
+            const pgDetalhes = reg.pagamentosDetalhados || {}
+            const totalPagoEmDinheiro = (Number(pgDetalhes.dinheiro) || 0)
+            const totalPagoGeral = totalPagoEmDinheiro + (Number(pgDetalhes.pix) || 0) + (Number(pgDetalhes.cartaoCredito) || 0) + (Number(pgDetalhes.cartaoDebito) || 0)
+            const teveTroco = totalPagoGeral > (reg.total || 0) && totalPagoEmDinheiro > 0
+            const valorTroco = teveTroco ? totalPagoGeral - reg.total : 0
 
             return (
               <div key={reg?.idFirestore || index} style={{ background: 'white', borderRadius: '16px', border: '1px solid #f1f5f9', borderLeft: `5px solid ${corDestaque}`, display: 'flex', flexDirection: 'column', overflow: 'hidden', opacity: ehEstorno ? 0.8 : 1 }}>
@@ -423,8 +569,20 @@ export default function Historico() {
                         )}
                       </div>
 
+                      {/* TROCO MENOS DESTACADO */}
+                      {teveTroco && !ehEstorno && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px dashed #cbd5e1' }}>
+                          <span style={{ fontSize: '13px', color: '#64748b' }}>
+                            Fornecido: <strong>{formatoMoeda(totalPagoGeral)}</strong>
+                          </span>
+                          <span style={{ fontSize: '13px', color: '#64748b' }}>
+                            Troco: <strong style={{ color: '#1e1b4b', fontSize: '14px' }}>{formatoMoeda(valorTroco)}</strong>
+                          </span>
+                        </div>
+                      )}
+
                       {ehEstorno && reg.detalhesCancelamento && (
-                         <div style={{ marginTop: '8px', padding: '10px 12px', background: '#fee2e2', borderRadius: '8px', color: '#991b1b', fontSize: '13px', fontWeight: '600' }}>
+                         <div style={{ marginTop: '4px', padding: '10px 12px', background: '#fee2e2', borderRadius: '8px', color: '#991b1b', fontSize: '13px', fontWeight: '600' }}>
                            ⚠️ {reg.detalhesCancelamento}
                          </div>
                       )}
@@ -434,7 +592,7 @@ export default function Historico() {
                           onClick={() => setReciboAberto(reg)}
                           style={{ flex: 1, background: '#f1f5f9', color: '#1e1b4b', border: '1px solid #cbd5e1', padding: '10px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', transition: '0.2s' }}
                         >
-                          <FileText size={16} /> Gerar Recibo
+                          <FileText size={16} /> Ver Recibo
                         </button>
 
                         {!ehEstorno && (
