@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { History, ShoppingBag, Edit, Calendar, Clock, User, CreditCard, Filter, Search, Package, ArrowRight, X, Lock, FileText, Settings } from 'lucide-react'
+import { History, ShoppingBag, Edit, Calendar, Clock, User, CreditCard, Filter, Search, Package, ArrowRight, X, Lock, FileText, Settings, AlertOctagon } from 'lucide-react'
 
-import { collection, getDocs, doc, deleteDoc, getDoc, setDoc, updateDoc, query, orderBy } from 'firebase/firestore'
+import { collection, getDocs, doc, getDoc, setDoc, updateDoc, query, orderBy } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
 
 import ReciboModal from './ReciboModal'
@@ -94,7 +94,7 @@ export default function Historico() {
   }, [])
 
   const tentarCancelarVenda = (idFirestore) => {
-    setAuthModal({ isOpen: true, targetId: idFirestore, titulo: 'Autorização: Cancelar Transação' })
+    setAuthModal({ isOpen: true, targetId: idFirestore, titulo: 'Autorização: Cancelar e Estornar Transação' })
   }
 
   const fecharModal = () => {
@@ -122,9 +122,10 @@ export default function Historico() {
     const vendaParaCancelar = registros.find(h => h.idFirestore === idFirestore)
     if (!vendaParaCancelar) return
 
-    if (window.confirm('Confirmar o cancelamento da venda na nuvem? Os produtos retornarão ao estoque e, se houver débito, ele será removido da ficha do cliente.')) {
+    if (window.confirm('Confirmar o estorno da venda na nuvem? Os produtos retornarão ao estoque, o cliente será atualizado e o registro ficará marcado como CANCELADO no histórico.')) {
       
       try {
+        // Devolver itens ao estoque
         if (vendaParaCancelar.itens && vendaParaCancelar.itens.length > 0) {
           for (const itemVendido of vendaParaCancelar.itens) {
             const produtoRef = doc(db, "produtos", itemVendido.id)
@@ -138,6 +139,7 @@ export default function Historico() {
           }
         }
 
+        // Remover da conta do cliente se for fiado (caso existam registros antigos)
         if (vendaParaCancelar.tipo === 'FIADO' && vendaParaCancelar.cliente?.id) {
           const clienteRef = doc(db, "clientes", vendaParaCancelar.cliente.id)
           const clienteDoc = await getDoc(clienteRef)
@@ -151,10 +153,19 @@ export default function Historico() {
           }
         }
 
-        await deleteDoc(doc(db, "historico", idFirestore))
-        setRegistros(registros.filter(h => h.idFirestore !== idFirestore))
+        // Em vez de deletar, atualizamos o registro para ESTORNO
+        const infoEstorno = `Estornado em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`
+        await updateDoc(doc(db, "historico", idFirestore), { 
+          tipo: 'ESTORNO',
+          detalhesCancelamento: infoEstorno
+        })
+        
+        // Atualiza a interface local
+        setRegistros(registros.map(h => 
+          h.idFirestore === idFirestore ? { ...h, tipo: 'ESTORNO', detalhesCancelamento: infoEstorno } : h
+        ))
 
-        alert('Cancelamento concluído com sucesso!')
+        alert('Cancelamento concluído com sucesso. Registro mantido como Estornado!')
 
       } catch (error) {
         console.error("Erro crítico no cancelamento:", error)
@@ -174,21 +185,19 @@ export default function Historico() {
       if (reg.data !== dataFormatada) return false
     }
 
-    const ehBaixa = reg.vendedor === 'Baixa de Fiado - Any' || reg.tipo === 'BAIXA' || reg.itens?.[0]?.id === 'baixa_conta'
-    const ehFiado = reg.tipo === 'FIADO'
+    const ehEstorno = reg.tipo === 'ESTORNO'
     const ehEstoque = reg.tipo === 'SISTEMA' || reg.tipo === 'ESTOQUE'
-    const ehVendaNormal = reg.tipo === 'VENDA' && !ehBaixa
+    const ehVendaNormal = reg.tipo === 'VENDA' || (reg.tipo === 'FIADO' && !ehEstorno) || (reg.tipo === 'BAIXA' && !ehEstorno)
 
     if (tipoFiltro === 'VENDAS' && !ehVendaNormal) return false
-    if (tipoFiltro === 'FIADO' && !ehFiado) return false
     if (tipoFiltro === 'ESTOQUE' && !ehEstoque) return false
-    if (tipoFiltro === 'BAIXAS' && !ehBaixa) return false
+    if (tipoFiltro === 'ESTORNOS' && !ehEstorno) return false
 
     if (busca.trim()) {
       const termo = busca.toLowerCase()
-      const idStr = String(reg.idRegistro || '') // Pesquisa pelo ID da venda também
+      const idStr = String(reg.idRegistro || '') 
 
-      if (ehVendaNormal || ehFiado || ehBaixa) {
+      if (ehVendaNormal || ehEstorno) {
         const nomeCliente = reg.cliente?.nome?.toLowerCase() || ''
         const nomeVendedor = reg.vendedor?.toLowerCase() || ''
         const itensVenda = (reg.itens || []).map(item => item?.nome?.toLowerCase() || '').join(' ')
@@ -250,9 +259,8 @@ export default function Historico() {
         <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', display: 'flex', overflowX: 'auto', width: isMobile ? '100%' : 'auto', scrollbarWidth: 'none' }}>
           <button onClick={() => setTipoFiltro('TODOS')} style={{ flex: 1, background: tipoFiltro === 'TODOS' ? '#4f46e5' : 'transparent', color: tipoFiltro === 'TODOS' ? 'white' : '#64748b', border: 'none', padding: '10px 14px', fontWeight: '600', cursor: 'pointer', fontSize: '14px', whiteSpace: 'nowrap' }}>Todos</button>
           <button onClick={() => setTipoFiltro('VENDAS')} style={{ flex: 1, background: tipoFiltro === 'VENDAS' ? '#10b981' : 'transparent', color: tipoFiltro === 'VENDAS' ? 'white' : '#64748b', border: 'none', padding: '10px 14px', fontWeight: '600', cursor: 'pointer', fontSize: '14px', whiteSpace: 'nowrap' }}>Vendas</button>
-          <button onClick={() => setTipoFiltro('FIADO')} style={{ flex: 1, background: tipoFiltro === 'FIADO' ? '#ef4444' : 'transparent', color: tipoFiltro === 'FIADO' ? 'white' : '#64748b', border: 'none', padding: '10px 14px', fontWeight: '600', cursor: 'pointer', fontSize: '14px', whiteSpace: 'nowrap' }}>Fiado</button>
           <button onClick={() => setTipoFiltro('ESTOQUE')} style={{ flex: 1, background: tipoFiltro === 'ESTOQUE' ? '#3b82f6' : 'transparent', color: tipoFiltro === 'ESTOQUE' ? 'white' : '#64748b', border: 'none', padding: '10px 14px', fontWeight: '600', cursor: 'pointer', fontSize: '14px', whiteSpace: 'nowrap' }}>Estoque</button>
-          <button onClick={() => setTipoFiltro('BAIXAS')} style={{ flex: 1, background: tipoFiltro === 'BAIXAS' ? '#a855f7' : 'transparent', color: tipoFiltro === 'BAIXAS' ? 'white' : '#64748b', border: 'none', padding: '10px 14px', fontWeight: '600', cursor: 'pointer', fontSize: '14px', whiteSpace: 'nowrap' }}>Baixas</button>
+          <button onClick={() => setTipoFiltro('ESTORNOS')} style={{ flex: 1, background: tipoFiltro === 'ESTORNOS' ? '#ef4444' : 'transparent', color: tipoFiltro === 'ESTORNOS' ? 'white' : '#64748b', border: 'none', padding: '10px 14px', fontWeight: '600', cursor: 'pointer', fontSize: '14px', whiteSpace: 'nowrap' }}>Estornos</button>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', background: '#f8fafc', padding: '8px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', gap: '8px', width: isMobile ? '100%' : 'auto', boxSizing: 'border-box' }}>
@@ -297,49 +305,44 @@ export default function Historico() {
           </div>
         ) : (
           registrosPaginados.map((reg, index) => {
-            const ehBaixa = reg.vendedor === 'Baixa de Fiado - Any' || reg.tipo === 'BAIXA' || reg.itens?.[0]?.id === 'baixa_conta'
-            const ehFiado = reg.tipo === 'FIADO'
+            const ehEstorno = reg.tipo === 'ESTORNO'
             const ehEstoque = reg.tipo === 'SISTEMA' || reg.tipo === 'ESTOQUE'
-            const ehVendaNormal = reg.tipo === 'VENDA' && !ehBaixa
+            // Engloba fiados/baixas antigas como venda normal se ainda existirem no banco
+            const ehVendaNormal = (reg.tipo === 'VENDA' || reg.tipo === 'FIADO' || reg.tipo === 'BAIXA') && !ehEstorno && !ehEstoque
 
             let labelTipo = 'Alteração de Estoque'
             let corDestaque = '#3b82f6'
             let bgCorDestaque = '#dbeafe'
             let iconeCategoria = <Package size={20} />
 
-            if (ehBaixa) {
-              labelTipo = 'Baixa de Conta de Cliente'
-              corDestaque = '#a855f7'
-              bgCorDestaque = '#f3e8ff'
-              iconeCategoria = <CreditCard size={20} />
-            } else if (ehFiado) {
-              labelTipo = 'Venda Fiado (Pendente)'
-              corDestaque = '#ef4444'
-              bgCorDestaque = '#fee2e2'
-              iconeCategoria = <History size={20} />
+            if (ehEstorno) {
+              labelTipo = 'Transação Cancelada (Estorno)'
+              corDestaque = '#dc2626'
+              bgCorDestaque = '#fef2f2'
+              iconeCategoria = <AlertOctagon size={20} />
             } else if (ehVendaNormal) {
-              labelTipo = 'Venda Concluída'
+              labelTipo = 'Venda Registrada'
               corDestaque = '#10b981'
               bgCorDestaque = '#d1fae5'
               iconeCategoria = <ShoppingBag size={20} />
             }
 
-            const mostrarComoEstruturaVenda = ehVendaNormal || ehFiado || ehBaixa
+            const mostrarComoEstruturaVenda = ehVendaNormal || ehEstorno
 
             return (
-              <div key={reg?.idFirestore || index} style={{ background: 'white', borderRadius: '16px', border: '1px solid #f1f5f9', borderLeft: `5px solid ${corDestaque}`, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <div key={reg?.idFirestore || index} style={{ background: 'white', borderRadius: '16px', border: '1px solid #f1f5f9', borderLeft: `5px solid ${corDestaque}`, display: 'flex', flexDirection: 'column', overflow: 'hidden', opacity: ehEstorno ? 0.8 : 1 }}>
                 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', flexDirection: isMobile ? 'column' : 'row', padding: isMobile ? '16px' : '16px 24px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9', gap: isMobile ? '16px' : '0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', flexDirection: isMobile ? 'column' : 'row', padding: isMobile ? '16px' : '16px 24px', background: ehEstorno ? '#fef2f2' : '#f8fafc', borderBottom: '1px solid #f1f5f9', gap: isMobile ? '16px' : '0' }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
                     <div style={{ background: bgCorDestaque, color: corDestaque, padding: '8px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '2px' }}>
                       {iconeCategoria}
                     </div>
                     <div>
-                      <span style={{ fontSize: '15px', fontWeight: 'bold', color: '#1e1b4b', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '15px', fontWeight: 'bold', color: ehEstorno ? '#991b1b' : '#1e1b4b', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                         {labelTipo}
-                        {reg.idRegistro && <span style={{ fontSize: '10px', background: '#e2e8f0', color: '#475569', padding: '2px 6px', borderRadius: '4px', letterSpacing: '0' }}>#{reg.idRegistro}</span>}
+                        {reg.idRegistro && <span style={{ fontSize: '10px', background: ehEstorno ? '#fca5a5' : '#e2e8f0', color: ehEstorno ? '#7f1d1d' : '#475569', padding: '2px 6px', borderRadius: '4px', letterSpacing: '0' }}>#{reg.idRegistro}</span>}
                       </span>
-                      <div style={{ display: 'flex', gap: '12px', color: '#64748b', fontSize: '12px', marginTop: '4px' }}>
+                      <div style={{ display: 'flex', gap: '12px', color: ehEstorno ? '#b91c1c' : '#64748b', fontSize: '12px', marginTop: '4px' }}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Calendar size={12} /> {reg?.data || 'Sem data'}</span>
                         <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Clock size={12} /> {reg?.hora || 'Sem hora'}</span>
                       </div>
@@ -347,16 +350,16 @@ export default function Historico() {
                   </div>
                   
                   {mostrarComoEstruturaVenda && (
-                    <div style={{ textAlign: isMobile ? 'left' : 'right', display: 'flex', flexDirection: 'column', gap: '2px', borderTop: isMobile ? '1px dashed #cbd5e1' : 'none', paddingTop: isMobile ? '12px' : '0' }}>
+                    <div style={{ textAlign: isMobile ? 'left' : 'right', display: 'flex', flexDirection: 'column', gap: '2px', borderTop: isMobile ? `1px dashed ${ehEstorno ? '#fca5a5' : '#cbd5e1'}` : 'none', paddingTop: isMobile ? '12px' : '0' }}>
                       {reg.desconto > 0 && (
                         <span style={{ fontSize: '12px', color: '#94a3b8', textDecoration: 'line-through' }}>
                           Subtotal: {formatoMoeda(reg.subtotal || 0)}
                         </span>
                       )}
-                      <span style={{ fontSize: '11px', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>
+                      <span style={{ fontSize: '11px', color: ehEstorno ? '#b91c1c' : '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>
                         {reg.desconto > 0 ? `Total com Desconto` : 'Total Movimentado'}
                       </span>
-                      <h3 style={{ fontSize: '20px', color: corDestaque, fontWeight: '900', margin: 0 }}>
+                      <h3 style={{ fontSize: '20px', color: ehEstorno ? '#991b1b' : corDestaque, fontWeight: '900', margin: 0 }}>
                         {formatoMoeda(reg?.total || 0)}
                       </h3>
                     </div>
@@ -375,10 +378,13 @@ export default function Historico() {
                             reg.itens.map((item, i) => (
                               <div key={item?.id || i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', fontSize: '14px', color: '#1e1b4b', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '4px' : '0', borderBottom: isMobile && i !== reg.itens.length - 1 ? '1px solid #e2e8f0' : 'none', paddingBottom: isMobile && i !== reg.itens.length - 1 ? '8px' : '0' }}>
                                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                                  <span style={{ fontWeight: '600', color: '#4f46e5' }}>{item?.quantidadeComprada || 1}x</span>
-                                  <span style={{ lineHeight: '1.3' }}>{item?.nome || 'Produto Desconhecido'}</span>
+                                  <span style={{ fontWeight: '600', color: ehEstorno ? '#ef4444' : '#4f46e5' }}>{item?.quantidadeComprada || 1}x</span>
+                                  <span style={{ lineHeight: '1.3' }}>
+                                    {item?.codigoBarras && <strong style={{ color: '#64748b', marginRight: '6px' }}>{item.codigoBarras} -</strong>}
+                                    <span style={{ textDecoration: ehEstorno ? 'line-through' : 'none' }}>{item?.nome || 'Produto Desconhecido'}</span>
+                                  </span>
                                 </div>
-                                <span style={{ color: '#64748b', fontWeight: '600', alignSelf: isMobile ? 'flex-end' : 'auto' }}>
+                                <span style={{ color: '#64748b', fontWeight: '600', alignSelf: isMobile ? 'flex-end' : 'auto', textDecoration: ehEstorno ? 'line-through' : 'none' }}>
                                   {formatoMoeda((item?.preco || 0) * (item?.quantidadeComprada || 1))}
                                 </span>
                               </div>
@@ -417,6 +423,12 @@ export default function Historico() {
                         )}
                       </div>
 
+                      {ehEstorno && reg.detalhesCancelamento && (
+                         <div style={{ marginTop: '8px', padding: '10px 12px', background: '#fee2e2', borderRadius: '8px', color: '#991b1b', fontSize: '13px', fontWeight: '600' }}>
+                           ⚠️ {reg.detalhesCancelamento}
+                         </div>
+                      )}
+
                       <div style={{ display: 'flex', gap: '8px', marginTop: '16px', flexDirection: isMobile ? 'column' : 'row', alignSelf: isMobile ? 'stretch' : 'flex-end' }}>
                         <button 
                           onClick={() => setReciboAberto(reg)}
@@ -425,12 +437,12 @@ export default function Historico() {
                           <FileText size={16} /> Gerar Recibo
                         </button>
 
-                        {(ehVendaNormal || ehFiado) && (
+                        {!ehEstorno && (
                           <button 
                             onClick={() => tentarCancelarVenda(reg.idFirestore)}
                             style={{ flex: 1, background: 'transparent', color: '#ef4444', border: '1px solid #fee2e2', padding: '10px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', transition: '0.2s' }}
                           >
-                            <X size={16} /> Cancelar Transação na Nuvem
+                            <X size={16} /> Estornar Transação
                           </button>
                         )}
                       </div>

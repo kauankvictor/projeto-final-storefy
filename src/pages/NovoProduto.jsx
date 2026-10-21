@@ -1,12 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Save, CheckCircle, AlertCircle, UploadCloud, X, LayoutGrid, Plus, Star, CreditCard, Info, Globe, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Save, CheckCircle, AlertCircle, UploadCloud, X, LayoutGrid, Plus, Star, RefreshCw } from 'lucide-react'
 
-import { collection, addDoc, getDocs } from 'firebase/firestore'
+import { collection, addDoc, getDocs, doc, getDoc } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
 
 export default function NovoProduto() {
   const navigate = useNavigate()
+  const nomeInputRef = useRef(null) // Ref para focar no campo Nome
  
   const [nome, setNome] = useState('')
   const [codigoBarras, setCodigoBarras] = useState('')
@@ -23,14 +24,17 @@ export default function NovoProduto() {
   const [descricao, setDescricao] = useState('')
   const [precoAntigo, setPrecoAntigo] = useState('')
  
-  const [mostrarParcelamento, setMostrarParcelamento] = useState(true)
+  // Padrões do catálogo
+  const [mostrarParcelamento, setMostrarParcelamento] = useState(false)
   const [maxParcelas, setMaxParcelas] = useState('')
   const [mostrarAvisoAcrescimo, setMostrarAvisoAcrescimo] = useState(true)
 
-  // Alterado para iniciar como false
   const [visivelCatalogo, setVisivelCatalogo] = useState(false)
   const [destaque, setDestaque] = useState(false)
   const [nomeDestaque, setNomeDestaque] = useState('')
+  
+  // Controle Global do Sistema
+  const [sistemaCatalogoAtivo, setSistemaCatalogoAtivo] = useState(true) 
  
   const [imagensPreviews, setImagensPreviews] = useState([])
   const [categoriasLista, setCategoriasLista] = useState([])
@@ -51,12 +55,39 @@ export default function NovoProduto() {
   const [arrastando, setArrastando] = useState(false)
   const [inicioArraste, setInicioArraste] = useState({ x: 0, y: 0 })
 
+  // Atalhos de teclado
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'F1') {
+        e.preventDefault()
+        document.getElementById('btn-salvar-produto')?.click()
+      } else if (e.key === 'F3') {
+        e.preventDefault()
+        nomeInputRef.current?.focus()
+      } else if (e.key === 'Escape') {
+        e.preventDefault()
+        navigate('/estoque')
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [navigate])
+
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768)
     window.addEventListener('resize', handleResize)
    
-    const carregarListasDinamicas = async () => {
+    const carregarConfiguracoesEListas = async () => {
       try {
+        const docRefLoja = doc(db, "configuracoes", "loja")
+        const docSnapLoja = await getDoc(docRefLoja)
+        if (docSnapLoja.exists()) {
+          const data = docSnapLoja.data()
+          if (data.catalogoAtivo !== undefined) {
+            setSistemaCatalogoAtivo(data.catalogoAtivo)
+          }
+        }
+
         const querySnapshot = await getDocs(collection(db, "produtos"))
         let catSet = new Set()
         let evSet = new Set()
@@ -64,9 +95,7 @@ export default function NovoProduto() {
 
         querySnapshot.docs.forEach(doc => {
           const data = doc.data()
-          
           if (data.codigoBarras) codigosLista.push(data.codigoBarras)
-
           if (data.categorias && Array.isArray(data.categorias)) {
             data.categorias.forEach(c => catSet.add(c))
           } else if (data.categoria) {
@@ -81,11 +110,15 @@ export default function NovoProduto() {
         setCategoriasLista([...catSet].sort((a, b) => a.localeCompare(b)))
         setEventosLista([...evSet].sort((a, b) => a.localeCompare(b)))
       } catch (error) {
-        console.error("Erro ao carregar listas dinâmicas:", error)
+        console.error("Erro ao carregar dados:", error)
       }
     }
 
-    carregarListasDinamicas()
+    carregarConfiguracoesEListas()
+    
+    // Foca no nome ao carregar a página
+    setTimeout(() => nomeInputRef.current?.focus(), 100)
+    
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
@@ -216,7 +249,6 @@ export default function NovoProduto() {
     return ''
   }
 
-  // Novo calculo para mostrar a margem de lucro real baseada no preço final digitado
   const calcularMargemReal = () => {
     if (custo && preco) {
       const valorCusto = parseFloat(custo)
@@ -274,7 +306,7 @@ export default function NovoProduto() {
         visivelCatalogo: visivelCatalogo,
         destaque: visivelCatalogo ? destaque : false,
         nomeDestaque: visivelCatalogo && destaque ? nomeDestaque.trim() : null,
-        fotos: imagensPreviews,
+        fotos: visivelCatalogo ? imagensPreviews : [], 
         dataCadastro: new Date().toISOString()
       }
 
@@ -302,17 +334,22 @@ export default function NovoProduto() {
       setPrecoAntigo('')
       setQuantidade('')
       setDescricao('')
-      setMostrarParcelamento(true)
+      setMostrarParcelamento(false)
       setMaxParcelas('')
       setMostrarAvisoAcrescimo(true)
-      setVisivelCatalogo(false) // Volta pro padrão desmarcado
+      setVisivelCatalogo(false)
       setDestaque(false)
       setNomeDestaque('')
       setImagensPreviews([])
       
       setCodigosExistentes([...codigosExistentes, produtoNovo.codigoBarras])
 
-      setTimeout(() => setSucesso(false), 3000)
+      // Reduzido para sair mais rápido da tela (1200ms) e focar no input Nome novamente
+      setTimeout(() => {
+        setSucesso(false)
+        nomeInputRef.current?.focus()
+      }, 900)
+
     } catch (error) {
       setErro('Erro ao salvar o produto na nuvem. Verifique sua conexão.')
     } finally {
@@ -323,8 +360,9 @@ export default function NovoProduto() {
   const margemRealTexto = calcularMargemReal()
 
   return (
-    <div style={{ maxWidth: '900px', display: 'flex', flexDirection: 'column', gap: '24px', paddingBottom: '40px', boxSizing: 'border-box', width: '100%' }}>
+    <div style={{ maxWidth: '900px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px', paddingBottom: '40px', boxSizing: 'border-box', width: '100%' }}>
       
+      {/* Editor de Imagem Modal */}
       {filaImagens.length > 0 && imgObj && (
         <div 
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.9)', zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px', userSelect: 'none' }}
@@ -355,23 +393,24 @@ export default function NovoProduto() {
 
             <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '12px' }}>
               <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#64748b' }}>Zoom</span>
-              <input type="range" min="1" max="3" step="0.1" value={zoom} onChange={e => setZoom(parseFloat(e.target.value))} style={{ flex: 1, accentColor: '#4f46e5' }} />
+              <input type="range" min="1" max="3" step="0.1" value={zoom} onChange={e => setZoom(parseFloat(e.target.value))} style={{ flex: 1, accentColor: '#2563eb' }} />
             </div>
 
             <div style={{ display: 'flex', gap: '12px', width: '100%', marginTop: '8px' }}>
               <button type="button" onClick={pularRecorte} style={{ flex: 1, background: 'transparent', border: '1px solid #cbd5e1', color: '#475569', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Cancelar</button>
-              <button type="button" onClick={salvarRecorte} style={{ flex: 2, background: '#4f46e5', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Confirmar Recorte</button>
+              <button type="button" onClick={salvarRecorte} style={{ flex: 2, background: '#2563eb', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Confirmar Recorte</button>
             </div>
           </div>
         </div>
       )}
 
+      {/* Categorias Modal */}
       {modalCategoriasAberta && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', zIndex: 5000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => setModalCategoriasAberta(false)}>
           <div style={{ background: 'white', width: '100%', maxWidth: '600px', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '24px', display: 'flex', flexDirection: 'column', maxHeight: '70vh', boxShadow: '0 -10px 25px rgba(0,0,0,0.1)' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '900', color: '#1f2937', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <LayoutGrid size={24} color="#db2777" /> Múltiplas Categorias
+                <LayoutGrid size={24} color="#2563eb" /> Múltiplas Categorias
               </h2>
               <button onClick={() => setModalCategoriasAberta(false)} style={{ background: '#f3f4f6', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><X size={20} /></button>
             </div>
@@ -392,9 +431,9 @@ export default function NovoProduto() {
                         fontSize: '16px',
                         fontWeight: 'bold',
                         textAlign: 'left',
-                        background: selecionada ? '#fce7f3' : '#f9fafb',
-                        color: selecionada ? '#db2777' : '#1f2937',
-                        border: selecionada ? '2px solid #db2777' : '2px solid transparent',
+                        background: selecionada ? '#dbeafe' : '#f9fafb',
+                        color: selecionada ? '#2563eb' : '#1f2937',
+                        border: selecionada ? '2px solid #2563eb' : '2px solid transparent',
                         cursor: 'pointer',
                         transition: 'all 0.2s ease',
                         display: 'flex',
@@ -403,7 +442,7 @@ export default function NovoProduto() {
                       }}
                     >
                       {cat}
-                      {selecionada && <CheckCircle size={20} color="#db2777" />}
+                      {selecionada && <CheckCircle size={20} color="#2563eb" />}
                     </button>
                   )
                 })
@@ -413,12 +452,13 @@ export default function NovoProduto() {
         </div>
       )}
 
+      {/* Eventos/Vitrine Modal */}
       {modalEventosAberta && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', zIndex: 5000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => setModalEventosAberta(false)}>
           <div style={{ background: 'white', width: '100%', maxWidth: '600px', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '24px', display: 'flex', flexDirection: 'column', maxHeight: '70vh', boxShadow: '0 -10px 25px rgba(0,0,0,0.1)' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '900', color: '#1f2937', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Star size={24} color="#db2777" /> Selecionar Vitrine
+                <Star size={24} color="#2563eb" /> Selecionar Vitrine
               </h2>
               <button onClick={() => setModalEventosAberta(false)} style={{ background: '#f3f4f6', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><X size={20} /></button>
             </div>
@@ -469,72 +509,59 @@ export default function NovoProduto() {
         </div>
       )}
 
-      {/* CABEÇALHO ATUALIZADO COM BOTÃO SALVAR */}
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <button onClick={() => navigate('/estoque')} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center', padding: 0 }}>
             <ArrowLeft size={24} />
           </button>
-          <h1 style={{ fontSize: isMobile ? '24px' : '28px', color: '#1e1b4b', fontWeight: 'bold', margin: 0 }}>Novo Produto</h1>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <h1 style={{ fontSize: isMobile ? '24px' : '28px', color: '#1e1b4b', fontWeight: 'bold', margin: 0 }}>Novo Produto</h1>
+            <span style={{ fontSize: '12px', color: '#94a3b8' }}>F1: Salvar • F3: Nome • ESC: Voltar</span>
+          </div>
         </div>
         
-        {/* BOTÃO SALVAR NO TOPO */}
         <button 
+          id="btn-salvar-produto"
           onClick={handleSalvar} 
           disabled={salvando} 
           style={{ background: salvando ? '#94a3b8' : '#10b981', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', cursor: salvando ? 'not-allowed' : 'pointer', fontSize: '15px' }}
         >
-          <Save size={18} /> {salvando ? 'Salvando...' : 'Salvar'}
+          <Save size={18} /> {salvando ? 'Salvando...' : 'Salvar (F1)'}
         </button>
       </header>
 
       {erro && <div style={{ background: '#fee2e2', color: '#ef4444', padding: '16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '500' }}><AlertCircle size={20} />{erro}</div>}
 
-      <form onSubmit={handleSalvar} style={{ background: 'white', padding: isMobile ? '20px' : '32px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '32px', width: '100%', boxSizing: 'border-box' }}>
-       
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: isMobile ? '100%' : '300px', flexShrink: 0 }}>
-          <label style={{ fontWeight: '600', color: '#475569', fontSize: '15px' }}>Fotos do Produto ({imagensPreviews.length}/5)</label>
-          <div style={{ width: '100%', height: '180px', borderRadius: '12px', border: '2px dashed #cbd5e1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#f8fafc', position: 'relative', overflow: 'hidden', cursor: 'pointer' }}>
-            <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px' }}>
-              <UploadCloud size={40} style={{ margin: '0 auto 8px auto' }} />
-              <p style={{ fontSize: '14px', margin: 0, fontWeight: '500' }}>Toque para adicionar fotos</p>
-            </div>
-            <input type="file" accept="image/*" multiple onChange={handleImagemChange} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }} />
-          </div>
-          {imagensPreviews.length > 0 && (
-            <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '10px' }}>
-              {imagensPreviews.map((srcObj, index) => (
-                <div key={index} style={{ position: 'relative', width: '80px', height: '80px', flexShrink: 0, borderRadius: '8px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
-                  <img src={srcObj.recortada || srcObj} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover', background: 'white' }} />
-                  <button type="button" onClick={() => removerImagem(index)} style={{ position: 'absolute', top: '4px', right: '4px', background: 'rgba(0,0,0,0.6)', color: 'white', border: 'none', borderRadius: '50%', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}><X size={14} /></button>
-                </div>
-              ))}
-            </div>
-          )}
-          <p style={{ fontSize: '12px', color: '#64748b', textAlign: 'center', margin: 0 }}>A foto será ajustada automaticamente num fundo branco quadrado (500x500).</p>
+      <form onSubmit={handleSalvar} style={{ background: 'white', padding: isMobile ? '20px' : '32px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', gap: '24px', width: '100%', boxSizing: 'border-box' }}>
+        
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Nome do Produto *</label>
+          <input ref={nomeInputRef} type="text" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Digite o nome do produto" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', flex: 1, minWidth: 0 }}>
-         
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Nome do Produto *</label>
-            <input type="text" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Digite o nome do produto" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '20px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 50%', minWidth: 0 }}>
-              <label style={{ fontWeight: '600', color: '#475569' }}>Código de Barras</label>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <input type="text" value={codigoBarras} onChange={(e) => setCodigoBarras(e.target.value)} placeholder="Ex: 12345" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', flex: 1, minWidth: '80px', boxSizing: 'border-box' }} />
-                <button type="button" onClick={gerarCodigoUnico} style={{ background: '#f8fafc', color: '#4f46e5', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontWeight: 'bold', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                  <RefreshCw size={18} /> Gerar
-                </button>
-              </div>
+        <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '20px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 50%', minWidth: 0 }}>
+            <label style={{ fontWeight: '600', color: '#475569' }}>Código de Barras</label>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input type="text" value={codigoBarras} onChange={(e) => setCodigoBarras(e.target.value)} placeholder="Ex: 12345" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', flex: 1, minWidth: '80px', boxSizing: 'border-box' }} />
+              <button type="button" onClick={gerarCodigoUnico} style={{ background: '#f8fafc', color: '#2563eb', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontWeight: 'bold', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                <RefreshCw size={18} /> Gerar
+              </button>
             </div>
-           
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 50%', minWidth: 0 }}>
-              <label style={{ fontWeight: '600', color: '#475569' }}>Categorias</label>
-              <div style={{ display: 'flex', gap: '8px' }}>
+          </div>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 50%', minWidth: 0 }}>
+            <label style={{ fontWeight: '600', color: '#475569' }}>Categorias</label>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch' }}>
+              
+              {/* NOVA UI DE CATEGORIA COM TAGS DENTRO DO INPUT */}
+              <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', gap: '6px', padding: '6px', border: '1px solid #cbd5e1', borderRadius: '8px', background: '#fff', alignItems: 'center', minHeight: '48px', boxSizing: 'border-box' }}>
+                {categoriasSelecionadas.map((cat, index) => (
+                  <div key={index} style={{ background: '#dbeafe', color: '#2563eb', padding: '4px 10px', borderRadius: '16px', fontSize: '13px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {cat}
+                    <button type="button" onClick={() => removerCategoriaSelecionada(cat)} style={{ background: 'transparent', border: 'none', padding: 0, color: '#2563eb', cursor: 'pointer', display: 'flex' }}><X size={14}/></button>
+                  </div>
+                ))}
                 <input 
                   type="text" 
                   value={inputCategoria} 
@@ -545,82 +572,91 @@ export default function NovoProduto() {
                       adicionarCategoria();
                     }
                   }}
-                  placeholder="Nova categoria..." 
-                  style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', flex: 1, minWidth: '100px', boxSizing: 'border-box' }} 
+                  placeholder={categoriasSelecionadas.length === 0 ? "Nova categoria..." : ""}
+                  style={{ border: 'none', outline: 'none', fontSize: '16px', flex: 1, minWidth: '100px', background: 'transparent' }} 
                 />
-                <button type="button" onClick={adicionarCategoria} style={{ background: '#db2777', color: 'white', border: 'none', borderRadius: '8px', padding: '0 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <Plus size={20} />
-                </button>
-                <button type="button" onClick={() => setModalCategoriasAberta(true)} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569', flexShrink: 0 }}>
-                  <LayoutGrid size={20} />
-                </button>
               </div>
-              
-              {categoriasSelecionadas.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '4px' }}>
-                  {categoriasSelecionadas.map((cat, index) => (
-                    <div key={index} style={{ background: '#fce7f3', color: '#db2777', padding: '4px 12px', borderRadius: '16px', fontSize: '13px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      {cat}
-                      <button type="button" onClick={() => removerCategoriaSelecionada(cat)} style={{ background: 'transparent', border: 'none', padding: 0, color: '#db2777', cursor: 'pointer', display: 'flex' }}><X size={14}/></button>
-                    </div>
-                  ))}
-                </div>
-              )}
+
+              <button type="button" onClick={adicionarCategoria} style={{ background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', padding: '0 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Plus size={20} />
+              </button>
+              <button type="button" onClick={() => setModalCategoriasAberta(true)} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569', flexShrink: 0 }}>
+                <LayoutGrid size={20} />
+              </button>
             </div>
           </div>
+        </div>
 
-          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '16px', flexWrap: 'wrap' }}>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 120px' }}>
-              <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Custo (R$)</label>
-              <input type="number" step="0.01" value={custo} onChange={(e) => setCusto(e.target.value)} placeholder="Ex: 25.00" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 120px' }}>
-              <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Lucro (%)</label>
-              <input type="number" step="0.1" value={lucroPercentual} onChange={(e) => setLucroPercentual(e.target.value)} placeholder="Ex: 50" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 120px' }}>
-              <label style={{ fontWeight: '600', color: '#94a3b8', fontSize: '14px' }}>Sugestão (R$)</label>
-              <input type="text" readOnly value={calcularPrecoSugerido()} placeholder="Automático" style={{ padding: '12px', borderRadius: '8px', border: '1px dashed #cbd5e1', background: '#f8fafc', color: '#94a3b8', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box', cursor: 'not-allowed' }} />
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: '1 1 120px' }}>
-              <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>À Vista (R$) *</label>
-              <input type="number" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} placeholder="Preço Final" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
-              {/* FEEDBACK DE MARGEM DE LUCRO REAL */}
-              {margemRealTexto && (
-                <span style={{ fontSize: '12px', fontWeight: 'bold', color: margemRealTexto.includes('Prejuízo') ? '#ef4444' : '#10b981', marginTop: '2px' }}>
-                  {margemRealTexto}
-                </span>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 120px' }}>
-              <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Qtd. Estoque</label>
-              <input type="number" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} placeholder="Em estoque" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
-            </div>
-
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? '130px' : '150px'}, 1fr))`, gap: '16px' }}>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Custo (R$)</label>
+            <input type="number" step="0.01" value={custo} onChange={(e) => setCusto(e.target.value)} placeholder="Ex: 25.00" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
           </div>
 
-          <div style={{ background: '#f8fafc', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <h3 style={{ fontSize: '16px', color: '#1e1b4b', margin: '0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Globe size={20} color="#db2777" /> 🌐 Configurações do Catálogo
-            </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Lucro (%)</label>
+            <input type="number" step="0.1" value={lucroPercentual} onChange={(e) => setLucroPercentual(e.target.value)} placeholder="Ex: 50" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <label style={{ fontWeight: '600', color: '#94a3b8', fontSize: '14px' }}>Sugestão (R$)</label>
+            <input type="text" readOnly value={calcularPrecoSugerido()} placeholder="Automático" style={{ padding: '12px', borderRadius: '8px', border: '1px dashed #cbd5e1', background: '#f8fafc', color: '#94a3b8', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box', cursor: 'not-allowed' }} />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>À Vista (R$) *</label>
+            <input type="number" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} placeholder="Preço Final" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
+            {margemRealTexto && (
+              <span style={{ fontSize: '12px', fontWeight: 'bold', color: margemRealTexto.includes('Prejuízo') ? '#ef4444' : '#10b981', marginTop: '2px', whiteSpace: 'nowrap' }}>
+                {margemRealTexto}
+              </span>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Qtd. Estoque</label>
+            <input type="number" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} placeholder="Em estoque" style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} />
+          </div>
+
+        </div>
+
+        {/* MUDANÇA DE UI DO CATÁLOGO - INTEGRADO AO FORMULÁRIO SEM QUADRADO CINZA */}
+        {sistemaCatalogoAtivo && (
+          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', marginTop: '8px' }}>
             
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-              <input type="checkbox" id="visivelCatalogo" checked={visivelCatalogo} onChange={(e) => setVisivelCatalogo(e.target.checked)} style={{ width: '24px', height: '24px', cursor: 'pointer', accentColor: '#db2777' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 0', borderTop: '1px dashed #cbd5e1' }}>
+              <input type="checkbox" id="visivelCatalogo" checked={visivelCatalogo} onChange={(e) => setVisivelCatalogo(e.target.checked)} style={{ width: '24px', height: '24px', cursor: 'pointer', accentColor: '#2563eb' }} />
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 <label htmlFor="visivelCatalogo" style={{ fontWeight: 'bold', color: '#1e1b4b', cursor: 'pointer', fontSize: '15px', margin: 0 }}>Exibir no Catálogo Online</label>
-                <span style={{ fontSize: '13px', color: '#64748b' }}>Marque para configurar as informações da vitrine do cliente.</span>
+                <span style={{ fontSize: '13px', color: '#64748b' }}>Marque para configurar as informações visíveis para o cliente.</span>
               </div>
             </div>
 
-            {/* O BLOCO SÓ EXISTE (E OCUPA ESPAÇO) SE VISIVELCATALOGO FOR TRUE */}
             {visivelCatalogo && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', transition: 'all 0.3s ease-in-out', borderTop: '1px dashed #cbd5e1', paddingTop: '16px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', transition: 'all 0.3s ease-in-out', paddingTop: '12px', paddingBottom: '12px' }}>
                 
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Fotos do Produto no Catálogo ({imagensPreviews.length}/5)</label>
+                  <div style={{ width: '100%', height: '140px', borderRadius: '12px', border: '2px dashed #cbd5e1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#f8fafc', position: 'relative', overflow: 'hidden', cursor: 'pointer' }}>
+                    <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px' }}>
+                      <UploadCloud size={32} style={{ margin: '0 auto 8px auto' }} />
+                      <p style={{ fontSize: '14px', margin: 0, fontWeight: '500' }}>Toque para adicionar fotos</p>
+                    </div>
+                    <input type="file" accept="image/*" multiple onChange={handleImagemChange} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }} />
+                  </div>
+                  {imagensPreviews.length > 0 && (
+                    <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '4px', scrollbarWidth: 'none' }}>
+                      {imagensPreviews.map((srcObj, index) => (
+                        <div key={index} style={{ position: 'relative', width: '80px', height: '80px', flexShrink: 0, borderRadius: '8px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+                          <img src={srcObj.recortada || srcObj} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover', background: 'white' }} />
+                          <button type="button" onClick={() => removerImagem(index)} style={{ position: 'absolute', top: '4px', right: '4px', background: 'rgba(0,0,0,0.6)', color: 'white', border: 'none', borderRadius: '50%', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}><X size={14} /></button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <label style={{ fontWeight: '600', color: '#475569', fontSize: '14px' }}>Descrição do Produto</label>
                   <textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Digite a descrição que o cliente verá no catálogo..." style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', width: '100%', minHeight: '100px', resize: 'vertical', boxSizing: 'border-box' }} />
@@ -632,7 +668,7 @@ export default function NovoProduto() {
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '8px' }}>
-                  <input type="checkbox" id="destaque" checked={destaque} onChange={(e) => setDestaque(e.target.checked)} style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#db2777' }} />
+                  <input type="checkbox" id="destaque" checked={destaque} onChange={(e) => setDestaque(e.target.checked)} style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#2563eb' }} />
                   <label htmlFor="destaque" style={{ fontWeight: 'bold', color: '#1e1b4b', cursor: 'pointer', fontSize: '14px', margin: 0 }}>Destacar em Vitrine Especial (Kits, Eventos)</label>
                 </div>
               
@@ -655,7 +691,7 @@ export default function NovoProduto() {
                 )}
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <input type="checkbox" id="mostrarParcelamento" checked={mostrarParcelamento} onChange={(e) => setMostrarParcelamento(e.target.checked)} style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#db2777' }} />
+                  <input type="checkbox" id="mostrarParcelamento" checked={mostrarParcelamento} onChange={(e) => setMostrarParcelamento(e.target.checked)} style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#2563eb' }} />
                   <label htmlFor="mostrarParcelamento" style={{ fontWeight: 'bold', color: '#1e1b4b', cursor: 'pointer', fontSize: '14px', margin: 0 }}>Mostrar opção de parcelamento no cartão</label>
                 </div>
 
@@ -672,7 +708,7 @@ export default function NovoProduto() {
                 )}
                 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <input type="checkbox" id="mostrarAvisoAcrescimo" checked={mostrarAvisoAcrescimo} onChange={(e) => setMostrarAvisoAcrescimo(e.target.checked)} style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#db2777' }} />
+                  <input type="checkbox" id="mostrarAvisoAcrescimo" checked={mostrarAvisoAcrescimo} onChange={(e) => setMostrarAvisoAcrescimo(e.target.checked)} style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#2563eb' }} />
                   <label htmlFor="mostrarAvisoAcrescimo" style={{ fontWeight: 'bold', color: '#1e1b4b', cursor: 'pointer', fontSize: '14px', margin: 0 }}>Exibir aviso sobre acréscimo</label>
                 </div>
                 
@@ -685,13 +721,12 @@ export default function NovoProduto() {
               </div>
             )}
           </div>
+        )}
 
-          {/* BOTÃO SALVAR (MANTIDO EMBAIXO TAMBÉM) */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px', width: '100%' }}>
-            <button type="submit" disabled={salvando} style={{ background: salvando ? '#94a3b8' : '#10b981', color: 'white', border: 'none', padding: '14px 24px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', cursor: salvando ? 'not-allowed' : 'pointer', fontSize: '16px', width: isMobile ? '100%' : 'auto', justifyContent: 'center' }}>
-              <Save size={20} /> {salvando ? 'Salvando...' : 'Salvar Produto'}
-            </button>
-          </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px', width: '100%' }}>
+          <button type="submit" disabled={salvando} style={{ background: salvando ? '#94a3b8' : '#10b981', color: 'white', border: 'none', padding: '14px 24px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', cursor: salvando ? 'not-allowed' : 'pointer', fontSize: '16px', width: isMobile ? '100%' : 'auto', justifyContent: 'center' }}>
+            <Save size={20} /> {salvando ? 'Salvando...' : 'Salvar Produto'}
+          </button>
         </div>
 
       </form>

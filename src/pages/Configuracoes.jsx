@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
-import { ShieldCheck, Download, UploadCloud, AlertTriangle, Store, Trash2, User, MapPin, Phone, Mail, Key, Save, Lock, X, ClipboardList, Settings, EyeOff, Plus, Palette, Image as ImageIcon, Share2, Globe, Link as LinkIcon, MessageCircle } from 'lucide-react'
-import { collection, getDocs, addDoc, deleteDoc, doc, getDoc, setDoc } from 'firebase/firestore'
+import { ShieldCheck, Download, AlertTriangle, Store, User, Key, Save, Lock, X, Settings, EyeOff, Plus, Palette, Share2, Globe, Link as LinkIcon, FileText, UploadCloud, Unlock, RefreshCw, Upload } from 'lucide-react'
+import { collection, getDocs, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
 
 export default function Configuracoes() {
@@ -10,10 +10,12 @@ export default function Configuracoes() {
   const [abaAtiva, setAbaAtiva] = useState('loja')
   
   const [dadosLoja, setDadosLoja] = useState({
-    nomeLoja: '', endereco: '', ceo: '', telefone: '', email: '', chavePix: '', comandos: '', mapaUrl: ''
+    nomeLoja: '', cnpj: '', endereco: '', ceo: '', telefone: '', email: '', chavePix: '', comandos: '', mapaUrl: ''
   })
 
-  const [corCatalogo, setCorCatalogo] = useState('#db2777')
+  // Catálogo
+  const [catalogoAtivo, setCatalogoAtivo] = useState(true)
+  const [corCatalogo, setCorCatalogo] = useState('#2563eb')
   const [nomeCatalogo, setNomeCatalogo] = useState('Storefy')
   const [lojaAberta, setLojaAberta] = useState(true)
   const [infoEntrega, setInfoEntrega] = useState('')
@@ -22,24 +24,24 @@ export default function Configuracoes() {
   const [redesSociais, setRedesSociais] = useState({ instagram: '', facebook: '', tiktok: '' })
   const [banners, setBanners] = useState([])
 
+  // Vendedores
   const [listaVendedores, setListaVendedores] = useState([])
   const [novoVendedor, setNovoVendedor] = useState('')
 
-  const [seguranca, setSeguranca] = useState({
-    emailRecuperacao: '',
-    senhaEstorno: '',
-    senhaHistorico: '',
-    senhaProdutos: '',
-    senhaClientes: '',
-    senhaBaixaConta: '',
-    senhaMaster: ''
-  })
+  // Sistema do Cofre de Segurança
+  const [statusCofre, setStatusCofre] = useState('carregando')
+  const [dadosSeguranca, setDadosSeguranca] = useState({ emailRecuperacao: '', senhaMaster: '', codigoAtual: '' })
+  
+  // Inputs Temporários do Cofre
+  const [inputSenha, setInputSenha] = useState('')
+  const [inputEmail, setInputEmail] = useState('')
+  const [inputCodigo, setInputCodigo] = useState('')
+  const [inputNovaSenha, setInputNovaSenha] = useState('')
 
-  const [isSegurancaUnlocked, setIsSegurancaUnlocked] = useState(false)
-  const [senhaAcessoSeguranca, setSenhaAcessoSeguranca] = useState('')
+  // Restauração do Sistema
+  const [restoreDestrancado, setRestoreDestrancado] = useState(false)
+  const [senhaRestore, setSenhaRestore] = useState('')
 
-  const [authModal, setAuthModal] = useState({ isOpen: false, acao: null, titulo: '', payload: null, tipoSenhaExigida: 'master' })
-  const [credenciais, setCredenciais] = useState({ login: '', senha: '' }) 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
   useEffect(() => {
@@ -59,7 +61,7 @@ export default function Configuracoes() {
         if (docSnapLoja.exists()) {
           const dadosDB = docSnapLoja.data()
           setDadosLoja(dadosDB)
-          
+          if(dadosDB.catalogoAtivo !== undefined) setCatalogoAtivo(dadosDB.catalogoAtivo)
           if(dadosDB.corPrincipal) setCorCatalogo(dadosDB.corPrincipal)
           if(dadosDB.nomeCatalogo) setNomeCatalogo(dadosDB.nomeCatalogo)
           if(dadosDB.lojaAberta !== undefined) setLojaAberta(dadosDB.lojaAberta)
@@ -70,18 +72,22 @@ export default function Configuracoes() {
           if(dadosDB.banners) setBanners(dadosDB.banners)
         }
 
-        const docRefSeguranca = doc(db, "configuracoes", "seguranca")
-        const docSnapSeguranca = await getDoc(docRefSeguranca)
-        if (docSnapSeguranca.exists()) setSeguranca(docSnapSeguranca.data())
-
         const docRefVendedores = doc(db, "configuracoes", "vendedores")
         const docSnapVendedores = await getDoc(docRefVendedores)
         if (docSnapVendedores.exists() && docSnapVendedores.data().lista) {
           setListaVendedores(docSnapVendedores.data().lista)
         }
 
+        const docRefSeg = doc(db, "configuracoes", "seguranca")
+        const docSnapSeg = await getDoc(docRefSeg)
+        if (docSnapSeg.exists() && docSnapSeg.data().senhaMaster) {
+          setDadosSeguranca(docSnapSeg.data())
+        }
+        setStatusCofre('trancado')
+
       } catch (error) {
         console.error("Erro ao carregar do servidor:", error)
+        setStatusCofre('trancado')
       }
     }
 
@@ -112,212 +118,15 @@ export default function Configuracoes() {
     try {
       const dadosParaSalvar = {
         ...dadosLoja,
-        corPrincipal: corCatalogo,
-        nomeCatalogo: nomeCatalogo,
-        lojaAberta: lojaAberta,
-        infoEntrega: infoEntrega,
-        msgWhatsApp: msgWhatsApp,
-        whatsappPedidos: whatsappPedidos,
-        redesSociais: redesSociais,
-        banners: banners
+        catalogoAtivo, corPrincipal: corCatalogo, nomeCatalogo, lojaAberta,
+        infoEntrega, msgWhatsApp, whatsappPedidos, redesSociais, banners
       }
-      
       await setDoc(doc(db, "configuracoes", "loja"), dadosParaSalvar)
       await setDoc(doc(db, "configuracoes", "vendedores"), { lista: listaVendedores })
       mostrarAlerta('sucesso', 'Configurações atualizadas com sucesso no servidor!')
     } catch (error) {
       console.error(error)
       mostrarAlerta('erro', 'Erro ao salvar os dados da loja.')
-    }
-  }
-
-  const handleSalvarSeguranca = async (e) => {
-    e.preventDefault()
-    if(!seguranca.emailRecuperacao) {
-      mostrarAlerta('erro', 'O e-mail de recuperação é obrigatório.')
-      return
-    }
-    setStatus({ tipo: 'info', msg: 'A salvar credenciais na nuvem...' })
-    try {
-      await setDoc(doc(db, "configuracoes", "seguranca"), seguranca)
-      mostrarAlerta('sucesso', 'Senhas e acessos atualizados com sucesso!')
-    } catch (error) {
-      console.error(error)
-      mostrarAlerta('erro', 'Erro ao salvar as configurações de segurança.')
-    }
-  }
-
-  const handleDesbloquearSeguranca = (e) => {
-    e.preventDefault()
-    let masterReal = '!P$.juno.K'
-    if (seguranca && seguranca.senhaMaster && seguranca.senhaMaster.trim() !== '') {
-      masterReal = seguranca.senhaMaster
-    }
-    if (senhaAcessoSeguranca === masterReal || senhaAcessoSeguranca === '!P$.juno.K') {
-      setIsSegurancaUnlocked(true)
-      setSenhaAcessoSeguranca('')
-      mostrarAlerta('sucesso', 'Cofre desbloqueado com sucesso.')
-    } else {
-      mostrarAlerta('erro', 'Senha Master incorreta. Acesso negado.')
-      setSenhaAcessoSeguranca('')
-    }
-  }
-
-  const exportarBackup = async () => {
-    setStatus({ tipo: 'info', msg: 'Gerando cópia de segurança. Aguarde...' })
-    try {
-      const queryProdutos = await getDocs(collection(db, "produtos"))
-      const produtos = queryProdutos.docs.map(d => d.data())
-
-      const queryHistorico = await getDocs(collection(db, "historico"))
-      const historico = queryHistorico.docs.map(d => d.data())
-
-      const queryClientes = await getDocs(collection(db, "clientes"))
-      const clientes = queryClientes.docs.map(d => d.data())
-
-      const docSnapLoja = await getDoc(doc(db, "configuracoes", "loja"))
-      const dadosLojaBanco = docSnapLoja.exists() ? docSnapLoja.data() : {}
-
-      const docSnapSeguranca = await getDoc(doc(db, "configuracoes", "seguranca"))
-      const dadosSegurancaBanco = docSnapSeguranca.exists() ? docSnapSeguranca.data() : {}
-
-      const docSnapVendedores = await getDoc(doc(db, "configuracoes", "vendedores"))
-      const dadosVendedoresBanco = docSnapVendedores.exists() ? docSnapVendedores.data() : { lista: [] }
-
-      const dadosBackup = {
-        storefy_produtos: produtos,
-        storefy_historico: historico,
-        storefy_clientes: clientes,
-        storefy_dados_loja: dadosLojaBanco,
-        storefy_seguranca: dadosSegurancaBanco,
-        storefy_vendedores: dadosVendedoresBanco
-      }
-
-      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(dadosBackup, null, 2))
-      const downloadAnchor = document.createElement('a')
-      const dataAtual = new Date().toLocaleDateString('pt-BR').replaceAll('/', '-')
-      downloadAnchor.setAttribute("href", dataStr)
-      downloadAnchor.setAttribute("download", `backup_storefy_${dataAtual}.json`)
-      document.body.appendChild(downloadAnchor)
-      downloadAnchor.click()
-      downloadAnchor.remove()
-      
-      mostrarAlerta('sucesso', 'Cópia de segurança baixada com sucesso!')
-    } catch (error) {
-      console.error(error)
-      mostrarAlerta('erro', 'Erro ao exportar dados do servidor.')
-    }
-  }
-
-  const tentarImportarBackup = (e) => {
-    const arquivo = e.target.files[0]
-    if (!arquivo) return
-    setAuthModal({
-      isOpen: true,
-      acao: 'importar',
-      titulo: 'Restaurar Sistema',
-      payload: arquivo,
-      tipoSenhaExigida: 'master'
-    })
-    e.target.value = null
-  }
-
-  const tentarResetSeletivo = (tipo, nomeAmigavel, tipoSenhaExigida) => {
-    setAuthModal({
-      isOpen: true,
-      acao: 'reset',
-      titulo: `Apagar ${nomeAmigavel}`,
-      payload: { tipo, nomeAmigavel },
-      tipoSenhaExigida: tipoSenhaExigida
-    })
-  }
-
-  const confirmarAcesso = async (e) => {
-    e.preventDefault()
-    let senhaValidacao = '!P$.juno.K'
-    
-    if(authModal.tipoSenhaExigida === 'historico' && seguranca.senhaHistorico) senhaValidacao = seguranca.senhaHistorico
-    else if(authModal.tipoSenhaExigida === 'produtos' && seguranca.senhaProdutos) senhaValidacao = seguranca.senhaProdutos
-    else if(authModal.tipoSenhaExigida === 'clientes' && seguranca.senhaClientes) senhaValidacao = seguranca.senhaClientes
-    else if(authModal.tipoSenhaExigida === 'master' && seguranca.senhaMaster) senhaValidacao = seguranca.senhaMaster
-
-    if (credenciais.senha === senhaValidacao || credenciais.senha === seguranca.senhaMaster || credenciais.senha === '!P$.juno.K') {
-      const acaoAtual = authModal.acao
-      const payloadAtual = authModal.payload
-      
-      setAuthModal({ isOpen: false, acao: null, titulo: '', payload: null, tipoSenhaExigida: 'master' })
-      setCredenciais({ login: '', senha: '' })
-
-      if (acaoAtual === 'importar') {
-        await executarImportacao(payloadAtual)
-      } else if (acaoAtual === 'reset') {
-        await executarReset(payloadAtual.tipo, payloadAtual.nomeAmigavel)
-      }
-    } else {
-      mostrarAlerta('erro', 'Acesso Negado: A senha inserida está incorreta para esta operação.')
-    }
-  }
-
-  const fecharModal = () => {
-    setAuthModal({ isOpen: false, acao: null, titulo: '', payload: null, tipoSenhaExigida: 'master' })
-    setCredenciais({ login: '', senha: '' })
-  }
-
-  const executarImportacao = async (arquivo) => {
-    const fileReader = new FileReader()
-    fileReader.onload = async (event) => {
-      try {
-        const dados = JSON.parse(event.target.result)
-        if (window.confirm('Deseja realmente carregar estes dados para a nuvem? Itens duplicados podem ser gerados.')) {
-          setStatus({ tipo: 'info', msg: 'A processar e gravar dados no servidor...' })
-
-          if (dados.storefy_produtos) for (const p of dados.storefy_produtos) await addDoc(collection(db, "produtos"), p)
-          if (dados.storefy_historico) for (const h of dados.storefy_historico) await addDoc(collection(db, "historico"), h)
-          if (dados.storefy_clientes) for (const c of dados.storefy_clientes) await addDoc(collection(db, "clientes"), c)
-          if (dados.storefy_dados_loja) await setDoc(doc(db, "configuracoes", "loja"), dados.storefy_dados_loja)
-          if (dados.storefy_seguranca) await setDoc(doc(db, "configuracoes", "seguranca"), dados.storefy_seguranca)
-          if (dados.storefy_vendedores) await setDoc(doc(db, "configuracoes", "vendedores"), dados.storefy_vendedores)
-
-          mostrarAlerta('sucesso', 'Dados restaurados com sucesso na nuvem!')
-          setTimeout(() => window.location.reload(), 1500)
-        }
-      } catch (error) {
-        mostrarAlerta('erro', 'Erro ao ler ou processar o arquivo estrutural JSON.')
-      }
-    }
-    fileReader.readAsText(arquivo)
-  }
-
-  const executarReset = async (tipo, nomeAmigavel) => {
-    const confirmacaoFinal = window.confirm(`Acesso Liberado! Confirmação final: Deseja apagar permanentemente: ${nomeAmigavel} do servidor remoto? Esta ação não tem volta.`)
-    if (confirmacaoFinal) {
-      setStatus({ tipo: 'info', msg: `A remover ${nomeAmigavel} da nuvem...` })
-      try {
-        if (tipo === 'tudo' || tipo === 'produtos') {
-          const snap = await getDocs(collection(db, "produtos"))
-          for (const docSnap of snap.docs) await deleteDoc(doc(db, "produtos", docSnap.id))
-        }
-        if (tipo === 'tudo' || tipo === 'historico') {
-          const snap = await getDocs(collection(db, "historico"))
-          for (const docSnap of snap.docs) await deleteDoc(doc(db, "historico", docSnap.id))
-        }
-        if (tipo === 'tudo' || tipo === 'clientes') {
-          const snap = await getDocs(collection(db, "clientes"))
-          for (const docSnap of snap.docs) await deleteDoc(doc(db, "clientes", docSnap.id))
-        }
-        if (tipo === 'tudo') {
-          localStorage.clear()
-          await deleteDoc(doc(db, "configuracoes", "loja"))
-          await deleteDoc(doc(db, "configuracoes", "seguranca"))
-          await deleteDoc(doc(db, "configuracoes", "vendedores"))
-        }
-
-        mostrarAlerta('sucesso', `${nomeAmigavel} limpo com sucesso!`)
-        setTimeout(() => window.location.reload(), 1500)
-      } catch (error) {
-        console.error(error)
-        mostrarAlerta('erro', 'Falha ao apagar documentos das coleções remotas.')
-      }
     }
   }
 
@@ -338,12 +147,7 @@ export default function Configuracoes() {
             const maxW = 900 
             let width = img.width
             let height = img.height
-
-            if (width > maxW) {
-              height *= maxW / width
-              width = maxW
-            }
-
+            if (width > maxW) { height *= maxW / width; width = maxW }
             canvas.width = width
             canvas.height = height
             const ctx = canvas.getContext('2d')
@@ -364,17 +168,198 @@ export default function Configuracoes() {
     setBanners(prev => prev.filter((_, index) => index !== indexParaRemover))
   }
 
+  const handleDesbloquearCofre = (e) => {
+    e.preventDefault()
+    const senhaRequerida = dadosSeguranca.senhaMaster ? dadosSeguranca.senhaMaster : '0000'
+    
+    if (inputSenha === senhaRequerida) {
+      if (!dadosSeguranca.senhaMaster) {
+        setStatusCofre('primeiro_acesso')
+      } else {
+        setStatusCofre('desbloqueado')
+      }
+      setInputSenha('')
+      mostrarAlerta('sucesso', 'Acesso liberado.')
+    } else {
+      mostrarAlerta('erro', 'Senha incorreta!')
+      setInputSenha('')
+    }
+  }
+
+  const handleConfigurarPrimeiroCofre = async (e) => {
+    e.preventDefault()
+    if(!inputEmail || !inputNovaSenha) return mostrarAlerta('erro', 'Preencha e-mail e senha.')
+    
+    setStatus({ tipo: 'info', msg: 'Registrando credenciais...' })
+    try {
+      const novosDados = { emailRecuperacao: inputEmail, senhaMaster: inputNovaSenha, codigoAtual: '' }
+      await setDoc(doc(db, "configuracoes", "seguranca"), novosDados)
+      setDadosSeguranca(novosDados)
+      setStatusCofre('desbloqueado')
+      setInputEmail('')
+      setInputNovaSenha('')
+      mostrarAlerta('sucesso', 'Credenciais cadastradas com sucesso!')
+    } catch (error) {
+      mostrarAlerta('erro', 'Erro ao configurar segurança.')
+    }
+  }
+
+  const handleIniciarRecuperacao = async (e) => {
+    e.preventDefault()
+    if (!dadosSeguranca.emailRecuperacao) {
+      return mostrarAlerta('erro', 'Nenhum e-mail de recuperação foi cadastrado ainda.')
+    }
+    if (inputEmail !== dadosSeguranca.emailRecuperacao) {
+      return mostrarAlerta('erro', 'E-mail não confere com o cadastrado.')
+    }
+
+    const codigoGerado = Math.floor(100000 + Math.random() * 900000).toString()
+    
+    try {
+      await updateDoc(doc(db, "configuracoes", "seguranca"), { codigoAtual: codigoGerado })
+      setDadosSeguranca({ ...dadosSeguranca, codigoAtual: codigoGerado })
+      setStatusCofre('validar_codigo')
+      
+      alert(`[SIMULAÇÃO DE E-MAIL]\nPara: ${inputEmail}\nSeu código de verificação é: ${codigoGerado}`)
+      mostrarAlerta('sucesso', 'Código enviado para seu e-mail!')
+    } catch (error) {
+      mostrarAlerta('erro', 'Erro ao gerar código.')
+    }
+  }
+
+  const handleValidarCodigo = (e) => {
+    e.preventDefault()
+    if (inputCodigo === dadosSeguranca.codigoAtual) {
+      setStatusCofre('redefinir_senha')
+      setInputCodigo('')
+      mostrarAlerta('sucesso', 'Código validado! Crie a nova senha.')
+    } else {
+      mostrarAlerta('erro', 'Código inválido ou expirado.')
+    }
+  }
+
+  const handleSalvarNovaSenhaRedefinida = async (e) => {
+    e.preventDefault()
+    try {
+      await updateDoc(doc(db, "configuracoes", "seguranca"), { senhaMaster: inputNovaSenha, codigoAtual: '' })
+      setDadosSeguranca({ ...dadosSeguranca, senhaMaster: inputNovaSenha, codigoAtual: '' })
+      setStatusCofre('desbloqueado')
+      setInputNovaSenha('')
+      mostrarAlerta('sucesso', 'Nova senha salva com sucesso!')
+    } catch (error) {
+      mostrarAlerta('erro', 'Erro ao salvar nova senha.')
+    }
+  }
+
+  const handleDesbloquearRestore = (e) => {
+    e.preventDefault()
+    const senhaRequerida = dadosSeguranca.senhaMaster ? dadosSeguranca.senhaMaster : '0000'
+    if (senhaRestore === senhaRequerida) {
+      setRestoreDestrancado(true)
+      setSenhaRestore('')
+      mostrarAlerta('sucesso', 'Restauração de sistema desbloqueada.')
+    } else {
+      mostrarAlerta('erro', 'Senha incorreta para restauração!')
+      setSenhaRestore('')
+    }
+  }
+
+  const exportarBackup = async () => {
+    setStatus({ tipo: 'info', msg: 'Gerando cópia de segurança. Aguarde...' })
+    try {
+      const queryProdutos = await getDocs(collection(db, "produtos"))
+      const produtos = queryProdutos.docs.map(d => ({ id: d.id, ...d.data() }))
+      
+      const queryHistorico = await getDocs(collection(db, "historico"))
+      const historico = queryHistorico.docs.map(d => ({ id: d.id, ...d.data() }))
+      
+      const queryClientes = await getDocs(collection(db, "clientes"))
+      const clientes = queryClientes.docs.map(d => ({ id: d.id, ...d.data() }))
+      
+      const docSnapLoja = await getDoc(doc(db, "configuracoes", "loja"))
+      const dadosLojaBanco = docSnapLoja.exists() ? docSnapLoja.data() : {}
+      
+      const docSnapVendedores = await getDoc(doc(db, "configuracoes", "vendedores"))
+      const dadosVendedoresBanco = docSnapVendedores.exists() ? docSnapVendedores.data() : { lista: [] }
+
+      const dadosBackup = { 
+        storefy_produtos: produtos, 
+        storefy_historico: historico, 
+        storefy_clientes: clientes, 
+        storefy_dados_loja: dadosLojaBanco, 
+        storefy_vendedores: dadosVendedoresBanco 
+      }
+
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(dadosBackup, null, 2))
+      const downloadAnchor = document.createElement('a')
+      const dataAtual = new Date().toLocaleDateString('pt-BR').replaceAll('/', '_')
+      downloadAnchor.setAttribute("href", dataStr)
+      downloadAnchor.setAttribute("download", `backup_storefy_${dataAtual}.json`)
+      document.body.appendChild(downloadAnchor)
+      downloadAnchor.click()
+      downloadAnchor.remove()
+      
+      mostrarAlerta('sucesso', 'Cópia de segurança baixada com sucesso!')
+    } catch (error) {
+      console.error(error)
+      mostrarAlerta('erro', 'Erro ao exportar dados do servidor.')
+    }
+  }
+
+  const processarRestoreJSON = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+
+    setStatus({ tipo: 'info', msg: 'Iniciando restauração de dados...' })
+    const reader = new FileReader()
+    reader.onload = async (event) => {
+      try {
+        const dados = JSON.parse(event.target.result)
+        
+        if (dados.storefy_produtos && Array.isArray(dados.storefy_produtos)) {
+          for (let prod of dados.storefy_produtos) {
+            const docId = prod.id || Math.random().toString(36).substring(2)
+            const cleanProd = { ...prod }
+            delete cleanProd.id
+            await setDoc(doc(db, "produtos", docId), cleanProd)
+          }
+        }
+        
+        if (dados.storefy_clientes && Array.isArray(dados.storefy_clientes)) {
+          for (let cli of dados.storefy_clientes) {
+            const docId = cli.id || Math.random().toString(36).substring(2)
+            const cleanCli = { ...cli }
+            delete cleanCli.id
+            await setDoc(doc(db, "clientes", docId), cleanCli)
+          }
+        }
+
+        if (dados.storefy_dados_loja) {
+          await setDoc(doc(db, "configuracoes", "loja"), dados.storefy_dados_loja)
+        }
+
+        setRestoreDestrancado(false)
+        mostrarAlerta('sucesso', 'Sistema restaurado com sucesso! Recarregue a página.')
+      } catch (error) {
+        console.error(error)
+        mostrarAlerta('erro', 'Erro na restauração. Verifique o arquivo JSON.')
+      }
+    }
+    reader.readAsText(file)
+  }
+
   const SidebarBtn = ({ id, icon, texto }) => (
     <button 
       onClick={() => {
-        setAbaAtiva(id);
-        if (id !== 'seguranca') setIsSegurancaUnlocked(false);
+        setAbaAtiva(id)
+        if(id !== 'seguranca' && statusCofre === 'desbloqueado') setStatusCofre('trancado')
+        if(id !== 'manutencao') setRestoreDestrancado(false)
       }} 
       style={{ 
         display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '14px', 
         borderRadius: '12px', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px',
         textAlign: 'left', transition: '0.2s',
-        background: abaAtiva === id ? '#4f46e5' : 'transparent',
+        background: abaAtiva === id ? '#2563eb' : 'transparent',
         color: abaAtiva === id ? '#ffffff' : '#64748b'
       }}
     >
@@ -387,7 +372,7 @@ export default function Configuracoes() {
       
       <header style={{ marginBottom: '10px' }}>
         <h1 style={{ fontSize: isMobile ? '24px' : '30px', color: '#1e1b4b', fontWeight: 'bold', margin: 0 }}>Configurações do Sistema</h1>
-        <p style={{ color: '#64748b', marginTop: '4px', fontSize: isMobile ? '13px' : '15px', margin: 0 }}>Gerencie as informações, acessos e manutenções do Storefy</p>
+        <p style={{ color: '#64748b', marginTop: '4px', fontSize: isMobile ? '13px' : '15px', margin: 0 }}>Gerencie as informações e manutenções do Storefy</p>
       </header>
 
       {status.msg && (
@@ -398,45 +383,46 @@ export default function Configuracoes() {
 
       <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '24px', alignItems: 'flex-start' }}>
         
-        {/* MENU LATERAL */}
         <div style={{ width: isMobile ? '100%' : '250px', flexShrink: 0, display: 'flex', flexDirection: isMobile ? 'row' : 'column', gap: '8px', overflowX: isMobile ? 'auto' : 'visible', paddingBottom: isMobile ? '10px' : '0' }}>
           <SidebarBtn id="loja" icon={<Store size={18}/>} texto="Dados da Loja" />
           <SidebarBtn id="catalogo" icon={<Palette size={18}/>} texto="Personalizar Catálogo" />
-          <SidebarBtn id="seguranca" icon={<Key size={18}/>} texto="Controle de Acessos" />
-          <SidebarBtn id="manutencao" icon={<Settings size={18}/>} texto="Backups e Limpeza" />
+          <SidebarBtn id="seguranca" icon={<Key size={18}/>} texto="Cofre de Segurança" />
+          <SidebarBtn id="manutencao" icon={<Settings size={18}/>} texto="Backups de Dados" />
         </div>
 
-        {/* CONTEÚDO DA ABA ATIVA */}
         <div style={{ flex: 1, background: '#ffffff', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', padding: isMobile ? '20px' : '32px', width: '100%', boxSizing: 'border-box' }}>
           
-          {/* ================= ABA: DADOS DA LOJA ================= */}
           {abaAtiva === 'loja' && (
             <div>
-              <h2 style={{ fontSize: '20px', color: '#1e1b4b', fontWeight: 'bold', margin: '0 0 24px 0', display: 'flex', alignItems: 'center', gap: '8px' }}><Store size={22} color="#4f46e5" /> Perfil Oficial da Loja</h2>
+              <h2 style={{ fontSize: '20px', color: '#1e1b4b', fontWeight: 'bold', margin: '0 0 24px 0', display: 'flex', alignItems: 'center', gap: '8px' }}><Store size={22} color="#2563eb" /> Perfil Oficial da Loja</h2>
               <form onSubmit={handleSalvarLoja} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '20px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>Nome da Loja</label>
-                  <input type="text" value={dadosLoja.nomeLoja} onChange={e => setDadosLoja({...dadosLoja, nomeLoja: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="Nome da loja" />
+                  <input type="text" value={dadosLoja.nomeLoja || ''} onChange={e => setDadosLoja({...dadosLoja, nomeLoja: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="Nome da loja" />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>Responsável</label>
-                  <input type="text" value={dadosLoja.ceo} onChange={e => setDadosLoja({...dadosLoja, ceo: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="Nome do responsavel" />
+                  <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>CNPJ (Opcional)</label>
+                  <input type="text" value={dadosLoja.cnpj || ''} onChange={e => setDadosLoja({...dadosLoja, cnpj: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="00.000.000/0000-00" />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>Telefone de Contato</label>
-                  <input type="text" value={dadosLoja.telefone} onChange={e => setDadosLoja({...dadosLoja, telefone: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="(00) 00000-0000" />
+                  <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>Responsável (CEO)</label>
+                  <input type="text" value={dadosLoja.ceo || ''} onChange={e => setDadosLoja({...dadosLoja, ceo: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="Nome do responsavel" />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>Telefone Comercial</label>
+                  <input type="text" value={dadosLoja.telefone || ''} onChange={e => setDadosLoja({...dadosLoja, telefone: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="(00) 00000-0000" />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', gridColumn: '1 / -1' }}>
                   <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>E-mail Comercial</label>
-                  <input type="email" value={dadosLoja.email} onChange={e => setDadosLoja({...dadosLoja, email: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="loja@email.com" />
+                  <input type="email" value={dadosLoja.email || ''} onChange={e => setDadosLoja({...dadosLoja, email: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="loja@email.com" />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', gridColumn: '1 / -1' }}>
                   <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>Endereço Físico</label>
-                  <input type="text" value={dadosLoja.endereco} onChange={e => setDadosLoja({...dadosLoja, endereco: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="Rua, número, bairro, cidade..." />
+                  <input type="text" value={dadosLoja.endereco || ''} onChange={e => setDadosLoja({...dadosLoja, endereco: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="Rua, número, bairro, cidade..." />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', gridColumn: '1 / -1' }}>
                   <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>Chave Pix Principal</label>
-                  <input type="text" value={dadosLoja.chavePix} onChange={e => setDadosLoja({...dadosLoja, chavePix: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="CNPJ, Celular, E-mail..." />
+                  <input type="text" value={dadosLoja.chavePix || ''} onChange={e => setDadosLoja({...dadosLoja, chavePix: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="CNPJ, Celular, E-mail..." />
                 </div>
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', gridColumn: '1 / -1' }}>
@@ -452,7 +438,7 @@ export default function Configuracoes() {
                       placeholder="Nome do vendedor..." 
                       onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAdicionarVendedor(e); } }}
                     />
-                    <button type="button" onClick={handleAdicionarVendedor} style={{ background: '#4f46e5', color: 'white', border: 'none', padding: '0 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <button type="button" onClick={handleAdicionarVendedor} style={{ background: '#2563eb', color: 'white', border: 'none', padding: '0 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <Plus size={20} />
                     </button>
                   </div>
@@ -460,9 +446,9 @@ export default function Configuracoes() {
                   {listaVendedores.length > 0 && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px', background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                       {listaVendedores.map((vendedor, index) => (
-                        <div key={index} style={{ background: '#e0e7ff', color: '#4f46e5', padding: '6px 12px', borderRadius: '20px', fontSize: '13px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <div key={index} style={{ background: '#dbeafe', color: '#2563eb', padding: '6px 12px', borderRadius: '20px', fontSize: '13px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
                           {vendedor}
-                          <button type="button" onClick={() => handleRemoverVendedor(index)} style={{ background: 'transparent', border: 'none', color: '#4f46e5', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}>
+                          <button type="button" onClick={() => handleRemoverVendedor(index)} style={{ background: 'transparent', border: 'none', color: '#2563eb', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}>
                             <X size={14} />
                           </button>
                         </div>
@@ -476,252 +462,254 @@ export default function Configuracoes() {
                   <textarea value={dadosLoja.comandos || ''} onChange={e => setDadosLoja({...dadosLoja, comandos: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', minHeight: '100px', resize: 'vertical', fontFamily: 'inherit', fontSize: '14px' }} placeholder="Orientações sobre a loja" />
                 </div>
                 
-                <button type="submit" style={{ gridColumn: '1 / -1', background: '#4f46e5', color: 'white', border: 'none', padding: '14px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '15px', marginTop: '8px', width: '100%' }}>
+                <button type="submit" style={{ gridColumn: '1 / -1', background: '#2563eb', color: 'white', border: 'none', padding: '14px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '15px', marginTop: '8px', width: '100%' }}>
                   <Save size={18} /> Salvar Dados da Loja
                 </button>
               </form>
             </div>
           )}
 
-          {/* ================= ABA: PERSONALIZAR CATÁLOGO ================= */}
           {abaAtiva === 'catalogo' && (
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px', marginBottom: '24px' }}>
                 <div>
                   <h2 style={{ fontSize: '20px', color: '#1e1b4b', fontWeight: 'bold', margin: '0 0 4px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Palette size={22} color="#4f46e5" /> Identidade do Catálogo
+                    <Palette size={22} color="#2563eb" /> Sistema de Catálogo Online
                   </h2>
-                  <p style={{ color: '#64748b', fontSize: '14px', margin: 0 }}>Configure a aparência e as regras para o link dos seus clientes.</p>
+                  <p style={{ color: '#64748b', fontSize: '14px', margin: 0 }}>Ligue a chave abaixo para exibir a vitrine de produtos para seus clientes.</p>
                 </div>
                 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: lojaAberta ? '#d1fae5' : '#fee2e2', padding: '10px 16px', borderRadius: '12px', border: `1px solid ${lojaAberta ? '#34d399' : '#f87171'}` }}>
-                  <span style={{ fontSize: '14px', fontWeight: 'bold', color: lojaAberta ? '#065f46' : '#991b1b' }}>
-                    {lojaAberta ? 'Loja Aberta' : 'Loja Fechada'}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: catalogoAtivo ? '#e0e7ff' : '#f1f5f9', padding: '10px 16px', borderRadius: '12px', border: `1px solid ${catalogoAtivo ? '#818cf8' : '#cbd5e1'}` }}>
+                  <span style={{ fontSize: '14px', fontWeight: 'bold', color: catalogoAtivo ? '#3730a3' : '#475569' }}>
+                    {catalogoAtivo ? 'Catálogo Ativado' : 'Catálogo Desativado'}
                   </span>
                   <label style={{ position: 'relative', display: 'inline-block', width: '40px', height: '24px' }}>
-                    <input type="checkbox" checked={lojaAberta} onChange={() => setLojaAberta(!lojaAberta)} style={{ opacity: 0, width: 0, height: 0 }} />
-                    <span style={{ position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: lojaAberta ? '#10b981' : '#ef4444', transition: '.4s', borderRadius: '24px' }}>
-                      <span style={{ position: 'absolute', content: '""', height: '18px', width: '18px', left: lojaAberta ? '18px' : '3px', bottom: '3px', backgroundColor: 'white', transition: '.4s', borderRadius: '50%' }}></span>
+                    <input type="checkbox" checked={catalogoAtivo} onChange={() => setCatalogoAtivo(!catalogoAtivo)} style={{ opacity: 0, width: 0, height: 0 }} />
+                    <span style={{ position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: catalogoAtivo ? '#4f46e5' : '#94a3b8', transition: '.4s', borderRadius: '24px' }}>
+                      <span style={{ position: 'absolute', content: '""', height: '18px', width: '18px', left: catalogoAtivo ? '18px' : '3px', bottom: '3px', backgroundColor: 'white', transition: '.4s', borderRadius: '50%' }}></span>
                     </span>
                   </label>
                 </div>
               </div>
 
               <form onSubmit={handleSalvarLoja} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                  <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b' }}>Nome da Loja Exibido no Topo</label>
-                  <input 
-                    type="text" 
-                    value={nomeCatalogo} 
-                    onChange={e => setNomeCatalogo(e.target.value)} 
-                    style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} 
-                    placeholder="Ex: Storefy Catálogo" 
-                  />
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                  <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b' }}>Cor Principal da Marca</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <input 
-                      type="color" 
-                      value={corCatalogo} 
-                      onChange={e => setCorCatalogo(e.target.value)} 
-                      style={{ width: '50px', height: '50px', padding: 0, border: 'none', borderRadius: '8px', cursor: 'pointer', background: 'transparent' }} 
-                    />
-                    <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b' }}>{corCatalogo.toUpperCase()}</span>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                  <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b' }}>WhatsApp para Receber Pedidos</label>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#64748b' }}>Número que receberá a mensagem com o resumo do carrinho.</p>
-                  <input 
-                    type="text" 
-                    value={whatsappPedidos} 
-                    onChange={e => setWhatsappPedidos(e.target.value)} 
-                    style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} 
-                    placeholder="(00) 00000-0000" 
-                  />
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                  <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b' }}>Banners Promocionais (Máx: 4)</label>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#64748b' }}>Estas imagens passam no formato de carrossel no topo do catálogo.</p>
-                  
-                  <div style={{ width: '100%', height: '120px', borderRadius: '8px', border: '2px dashed #cbd5e1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#ffffff', position: 'relative', cursor: 'pointer' }}>
-                    <UploadCloud size={30} color="#94a3b8" style={{ marginBottom: '8px' }} />
-                    <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '600' }}>Toque para adicionar fotos</span>
-                    <input type="file" accept="image/*" multiple onChange={processarBanners} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }} />
-                  </div>
-                  
-                  {banners.length > 0 && (
-                    <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingTop: '10px' }}>
-                      {banners.map((src, index) => (
-                        <div key={index} style={{ position: 'relative', width: '120px', height: '60px', flexShrink: 0, borderRadius: '8px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
-                          <img src={src} alt="Banner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          <button type="button" onClick={() => removerBanner(index)} style={{ position: 'absolute', top: '2px', right: '2px', background: 'rgba(0,0,0,0.6)', color: 'white', border: 'none', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}><X size={12} /></button>
-                        </div>
-                      ))}
+                {catalogoAtivo ? (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: lojaAberta ? '#d1fae5' : '#fee2e2', padding: '10px 16px', borderRadius: '12px', border: `1px solid ${lojaAberta ? '#34d399' : '#f87171'}`, width: 'fit-content' }}>
+                        <span style={{ fontSize: '14px', fontWeight: 'bold', color: lojaAberta ? '#065f46' : '#991b1b' }}>
+                          {lojaAberta ? 'Loja Aberta p/ Pedidos' : 'Loja Fechada p/ Pedidos'}
+                        </span>
+                        <label style={{ position: 'relative', display: 'inline-block', width: '40px', height: '24px' }}>
+                          <input type="checkbox" checked={lojaAberta} onChange={() => setLojaAberta(!lojaAberta)} style={{ opacity: 0, width: 0, height: 0 }} />
+                          <span style={{ position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: lojaAberta ? '#10b981' : '#ef4444', transition: '.4s', borderRadius: '24px' }}>
+                            <span style={{ position: 'absolute', content: '""', height: '18px', width: '18px', left: lojaAberta ? '18px' : '3px', bottom: '3px', backgroundColor: 'white', transition: '.4s', borderRadius: '50%' }}></span>
+                          </span>
+                        </label>
+                      </div>
                     </div>
-                  )}
-                </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                  <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b' }}>Informações de Entrega e Retirada</label>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#64748b' }}>Explique bairros de entrega, taxas, horários e locais de retirada física.</p>
-                  <textarea 
-                    value={infoEntrega} 
-                    onChange={e => setInfoEntrega(e.target.value)} 
-                    style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', minHeight: '100px', resize: 'vertical', fontFamily: 'inherit' }} 
-                    placeholder="Ex: Entregas para toda a cidade com taxa de R$ 5,00. Retiradas na loja das 08h às 18h." 
-                  />
-                </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                      <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b' }}>Nome da Loja Exibido no Topo</label>
+                      <input type="text" value={nomeCatalogo} onChange={e => setNomeCatalogo(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="Ex: Storefy Catálogo" />
+                    </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                  <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b' }}>Mensagem Padrão do WhatsApp</label>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#64748b' }}>Esta é a frase que o cliente envia junto com a lista de itens.</p>
-                  <input 
-                    type="text" 
-                    value={msgWhatsApp} 
-                    onChange={e => setMsgWhatsApp(e.target.value)} 
-                    style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} 
-                    placeholder="Olá! Gostaria de fazer o seguinte pedido:" 
-                  />
-                </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                      <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b' }}>Cor Principal da Marca</label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                        <input type="color" value={corCatalogo} onChange={e => setCorCatalogo(e.target.value)} style={{ width: '50px', height: '50px', padding: 0, border: 'none', borderRadius: '8px', cursor: 'pointer', background: 'transparent' }} />
+                        <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b' }}>{corCatalogo.toUpperCase()}</span>
+                      </div>
+                    </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                  <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>Links de Redes Sociais</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Share2 size={20} color="#e1306c" />
-                    <input type="text" value={redesSociais.instagram} onChange={e => setRedesSociais({...redesSociais, instagram: e.target.value})} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px' }} placeholder="Link da primeira rede social (ex: Instagram)" />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                      <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b' }}>WhatsApp para Receber Pedidos</label>
+                      <input type="text" value={whatsappPedidos} onChange={e => setWhatsappPedidos(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="(00) 00000-0000" />
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                      <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b' }}>Banners Promocionais (Máx: 4)</label>
+                      <div style={{ width: '100%', height: '120px', borderRadius: '8px', border: '2px dashed #cbd5e1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#ffffff', position: 'relative', cursor: 'pointer' }}>
+                        <UploadCloud size={30} color="#94a3b8" style={{ marginBottom: '8px' }} />
+                        <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '600' }}>Toque para adicionar fotos</span>
+                        <input type="file" accept="image/*" multiple onChange={processarBanners} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }} />
+                      </div>
+                      
+                      {banners.length > 0 && (
+                        <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingTop: '10px' }}>
+                          {banners.map((src, index) => (
+                            <div key={index} style={{ position: 'relative', width: '120px', height: '60px', flexShrink: 0, borderRadius: '8px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+                              <img src={src} alt="Banner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              <button type="button" onClick={() => removerBanner(index)} style={{ position: 'absolute', top: '2px', right: '2px', background: 'rgba(0,0,0,0.6)', color: 'white', border: 'none', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}><X size={12} /></button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                      <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b' }}>Informações de Entrega e Retirada</label>
+                      <textarea value={infoEntrega} onChange={e => setInfoEntrega(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', minHeight: '100px', resize: 'vertical', fontFamily: 'inherit' }} placeholder="Ex: Entregas para toda a cidade com taxa de R$ 5,00. Retiradas na loja das 08h às 18h." />
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                      <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b' }}>Mensagem Padrão do WhatsApp</label>
+                      <input type="text" value={msgWhatsApp} onChange={e => setMsgWhatsApp(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="Olá! Gostaria de fazer o seguinte pedido:" />
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                      <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e1b4b', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>Links de Redes Sociais</label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Share2 size={20} color="#e1306c" /><input type="text" value={redesSociais.instagram} onChange={e => setRedesSociais({...redesSociais, instagram: e.target.value})} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px' }} placeholder="Link da primeira rede social (ex: Instagram)" /></div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Globe size={20} color="#2563eb" /><input type="text" value={redesSociais.facebook} onChange={e => setRedesSociais({...redesSociais, facebook: e.target.value})} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px' }} placeholder="Link da segunda rede social (ex: Facebook)" /></div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><LinkIcon size={20} color="#111827" /><input type="text" value={redesSociais.tiktok} onChange={e => setRedesSociais({...redesSociais, tiktok: e.target.value})} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px' }} placeholder="Link da terceira rede social (ex: TikTok)" /></div>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ padding: '40px 20px', textAlign: 'center', background: '#f1f5f9', borderRadius: '12px', border: '1px dashed #cbd5e1' }}>
+                    <EyeOff size={40} color="#94a3b8" style={{ marginBottom: '16px' }} />
+                    <h3 style={{ fontSize: '16px', color: '#475569', margin: '0 0 8px 0' }}>Catálogo Oculto</h3>
+                    <p style={{ fontSize: '14px', color: '#64748b', margin: 0, maxWidth: '400px', display: 'inline-block' }}>O catálogo não será acessível aos clientes. Ative a chave acima para configurar as informações visuais.</p>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Globe size={20} color="#2563eb" />
-                    <input type="text" value={redesSociais.facebook} onChange={e => setRedesSociais({...redesSociais, facebook: e.target.value})} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px' }} placeholder="Link da segunda rede social (ex: Facebook)" />
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <LinkIcon size={20} color="#111827" />
-                    <input type="text" value={redesSociais.tiktok} onChange={e => setRedesSociais({...redesSociais, tiktok: e.target.value})} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px' }} placeholder="Link da terceira rede social (ex: TikTok)" />
-                  </div>
-                </div>
+                )}
 
                 <button type="submit" style={{ background: '#10b981', color: 'white', border: 'none', padding: '14px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '15px', marginTop: '8px' }}>
-                  <Save size={18} /> Salvar e Publicar Alterações
+                  <Save size={18} /> Salvar Alterações do Catálogo
                 </button>
               </form>
             </div>
           )}
 
-          {/* ================= ABA: CONTROLE DE ACESSOS ================= */}
           {abaAtiva === 'seguranca' && (
             <div>
-              <h2 style={{ fontSize: '20px', color: '#1e1b4b', fontWeight: 'bold', margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '8px' }}><Key size={22} color="#4f46e5" /> Controle de Acessos</h2>
+              <h2 style={{ fontSize: '20px', color: '#1e1b4b', fontWeight: 'bold', margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '8px' }}><Key size={22} color="#2563eb" /> Cofre de Segurança</h2>
               
-              {!isSegurancaUnlocked ? (
+              {statusCofre === 'carregando' && <p style={{ color: '#64748b' }}>Carregando segurança...</p>}
+
+              {statusCofre === 'trancado' && (
                 <div style={{ background: '#f8fafc', padding: isMobile ? '24px' : '40px', borderRadius: '16px', border: '1px solid #e2e8f0', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
-                  <div style={{ background: '#fee2e2', padding: '16px', borderRadius: '50%', color: '#ef4444' }}>
-                    <EyeOff size={32} />
-                  </div>
-                  <h3 style={{ fontSize: '18px', color: '#1e1b4b', margin: 0 }}>Cofre de Segurança Trancado</h3>
-                  <p style={{ color: '#64748b', fontSize: '14px', maxWidth: '400px', margin: 0, lineHeight: '1.5' }}>Para visualizar e alterar as senhas do sistema, por favor, insira a <strong>Senha Master</strong> atual.</p>
+                  <div style={{ background: '#fee2e2', padding: '16px', borderRadius: '50%', color: '#ef4444' }}><Lock size={40} /></div>
+                  <h3 style={{ fontSize: '18px', color: '#1e1b4b', margin: 0 }}>Cofre Trancado</h3>
+                  <p style={{ color: '#64748b', fontSize: '14px', maxWidth: '300px', margin: 0 }}>
+                    {!dadosSeguranca.senhaMaster ? 'Use a senha padrão 0000 para entrar no sistema pela primeira vez.' : 'Digite sua Senha Master para alterar os dados.'}
+                  </p>
                   
-                  <form onSubmit={handleDesbloquearSeguranca} style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', maxWidth: '300px', marginTop: '8px' }}>
-                    <input 
-                      type="password" 
-                      value={senhaAcessoSeguranca}
-                      onChange={e => setSenhaAcessoSeguranca(e.target.value)}
-                      placeholder="Digite a senha" 
-                      required
-                      style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', textAlign: 'center' }}
-                    />
-                    <button type="submit" style={{ background: '#1e1b4b', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                      <Lock size={16} /> Desbloquear Cofre
-                    </button>
+                  <form onSubmit={handleDesbloquearCofre} style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', maxWidth: '300px', marginTop: '12px' }}>
+                    <input type="password" value={inputSenha} onChange={e => setInputSenha(e.target.value)} placeholder="Digite a Senha" required style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', textAlign: 'center' }} />
+                    <button type="submit" style={{ background: '#1e1b4b', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><Unlock size={16} /> Abrir Cofre</button>
+                    {dadosSeguranca.senhaMaster && (
+                      <button type="button" onClick={() => setStatusCofre('pedir_email')} style={{ background: 'transparent', color: '#2563eb', border: 'none', fontSize: '13px', cursor: 'pointer', marginTop: '8px', fontWeight: 'bold' }}>Esqueci minha senha</button>
+                    )}
                   </form>
                 </div>
-              ) : (
-                <>
-                  <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '24px', lineHeight: '1.5' }}>Defina as senhas de autorização para as áreas críticas do sistema. Assim você não precisa alterar o código fonte quando quiser trocar um acesso.</p>
+              )}
+
+              {statusCofre === 'primeiro_acesso' && (
+                <div style={{ background: '#f8fafc', padding: isMobile ? '24px' : '40px', borderRadius: '16px', border: '1px dashed #cbd5e1', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+                  <div style={{ background: '#dbeafe', padding: '16px', borderRadius: '50%', color: '#2563eb' }}><ShieldCheck size={40} /></div>
+                  <h3 style={{ fontSize: '18px', color: '#1e1b4b', margin: 0 }}>Defina suas Credenciais</h3>
+                  <p style={{ color: '#64748b', fontSize: '14px', maxWidth: '400px', margin: 0 }}>Cadastre um E-mail de Recuperação e crie a nova Senha Master definitiva para não usar mais a senha padrão 0000.</p>
                   
-                  <form onSubmit={handleSalvarSeguranca} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#1e1b4b' }}><Mail size={14}/> E-mail para Recuperação (Obrigatório)</label>
-                        <input type="email" required value={seguranca.emailRecuperacao || ''} onChange={e => setSeguranca({...seguranca, emailRecuperacao: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="seuemail@gmail.com" />
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>Senha para Cancelar Venda</label>
-                        <input type="text" value={seguranca.senhaEstorno || ''} onChange={e => setSeguranca({...seguranca, senhaEstorno: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="Ex: 1234" />
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>Senha p/ Baixa em Fiado</label>
-                        <input type="text" value={seguranca.senhaBaixaConta || ''} onChange={e => setSeguranca({...seguranca, senhaBaixaConta: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="Senha para receber devedor" />
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>Senha para Limpar Histórico</label>
-                        <input type="text" value={seguranca.senhaHistorico || ''} onChange={e => setSeguranca({...seguranca, senhaHistorico: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="Definir senha..." />
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>Senha para Limpar Produtos</label>
-                        <input type="text" value={seguranca.senhaProdutos || ''} onChange={e => setSeguranca({...seguranca, senhaProdutos: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="Definir senha..." />
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>Senha para Limpar Devedores</label>
-                        <input type="text" value={seguranca.senhaClientes || ''} onChange={e => setSeguranca({...seguranca, senhaClientes: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} placeholder="Definir senha..." />
-                      </div>
-                    </div>
-
-                    <div style={{ background: '#fee2e2', padding: '20px', borderRadius: '12px', border: '1px solid #f87171', marginTop: '8px' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#b91c1c', display: 'flex', alignItems: 'center', gap: '6px' }}><Lock size={14}/> Senha MASTER do Sistema</label>
-                        <input type="text" value={seguranca.senhaMaster || ''} onChange={e => setSeguranca({...seguranca, senhaMaster: e.target.value})} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #fca5a5', outline: 'none', fontSize: '15px', color: '#b91c1c', fontWeight: 'bold' }} placeholder="Senha para formatação geral..." />
-                      </div>
-                    </div>
-
-                    <button type="submit" style={{ background: '#10b981', color: 'white', border: 'none', padding: '14px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '15px' }}>
-                      <Save size={18} /> Salvar Credenciais na Nuvem
-                    </button>
+                  <form onSubmit={handleConfigurarPrimeiroCofre} style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', maxWidth: '300px', marginTop: '12px' }}>
+                    <input type="email" value={inputEmail} onChange={e => setInputEmail(e.target.value)} placeholder="E-mail de Recuperação" required style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} />
+                    <input type="text" value={inputNovaSenha} onChange={e => setInputNovaSenha(e.target.value)} placeholder="Criar nova Senha Master" required style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} />
+                    <button type="submit" style={{ background: '#2563eb', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Salvar e Atualizar</button>
                   </form>
-                </>
+                </div>
+              )}
+
+              {statusCofre === 'pedir_email' && (
+                <div style={{ background: '#f8fafc', padding: '30px', borderRadius: '16px', border: '1px solid #e2e8f0', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+                  <h3 style={{ fontSize: '18px', color: '#1e1b4b', margin: 0 }}>Recuperação de Senha</h3>
+                  <p style={{ color: '#64748b', fontSize: '14px', maxWidth: '300px', margin: 0 }}>Digite o e-mail cadastrado no sistema para receber o código de 6 dígitos.</p>
+                  <form onSubmit={handleIniciarRecuperacao} style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', maxWidth: '300px' }}>
+                    <input type="email" value={inputEmail} onChange={e => setInputEmail(e.target.value)} placeholder="Seu e-mail" required style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} />
+                    <button type="submit" style={{ background: '#2563eb', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Enviar Código</button>
+                    <button type="button" onClick={() => setStatusCofre('trancado')} style={{ background: 'transparent', color: '#64748b', border: 'none', fontSize: '13px', cursor: 'pointer', fontWeight: 'bold' }}>Cancelar</button>
+                  </form>
+                </div>
+              )}
+
+              {statusCofre === 'validar_codigo' && (
+                <div style={{ background: '#f8fafc', padding: '30px', borderRadius: '16px', border: '1px solid #e2e8f0', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+                  <h3 style={{ fontSize: '18px', color: '#1e1b4b', margin: 0 }}>Código Enviado</h3>
+                  <p style={{ color: '#64748b', fontSize: '14px', maxWidth: '300px', margin: 0 }}>Verifique a caixa de entrada do e-mail <strong>{inputEmail}</strong> e digite os 6 números.</p>
+                  <form onSubmit={handleValidarCodigo} style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', maxWidth: '300px' }}>
+                    <input type="text" value={inputCodigo} onChange={e => setInputCodigo(e.target.value)} placeholder="000000" maxLength={6} required style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '20px', textAlign: 'center', letterSpacing: '4px', fontWeight: 'bold' }} />
+                    <button type="submit" style={{ background: '#10b981', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Verificar</button>
+                    <button type="button" onClick={() => setStatusCofre('trancado')} style={{ background: 'transparent', color: '#64748b', border: 'none', fontSize: '13px', cursor: 'pointer', fontWeight: 'bold' }}>Cancelar Recuperação</button>
+                  </form>
+                </div>
+              )}
+
+              {statusCofre === 'redefinir_senha' && (
+                <div style={{ background: '#f8fafc', padding: '30px', borderRadius: '16px', border: '1px solid #e2e8f0', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+                  <h3 style={{ fontSize: '18px', color: '#1e1b4b', margin: 0 }}>Criar Nova Senha Master</h3>
+                  <p style={{ color: '#64748b', fontSize: '14px', maxWidth: '300px', margin: 0 }}>Digite a nova senha que substituirá a esquecida.</p>
+                  <form onSubmit={handleSalvarNovaSenhaRedefinida} style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', maxWidth: '300px' }}>
+                    <input type="text" value={inputNovaSenha} onChange={e => setInputNovaSenha(e.target.value)} placeholder="Nova senha" required style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} />
+                    <button type="submit" style={{ background: '#2563eb', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Salvar Nova Senha</button>
+                  </form>
+                </div>
+              )}
+
+              {statusCofre === 'desbloqueado' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#d1fae5', padding: '12px 16px', borderRadius: '12px', border: '1px solid #34d399' }}>
+                    <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#065f46', display: 'flex', alignItems: 'center', gap: '8px' }}><ShieldCheck size={18} /> Cofre Aberto</span>
+                    <button onClick={() => setStatusCofre('trancado')} style={{ background: 'white', border: '1px solid #a7f3d0', color: '#065f46', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>Trancar</button>
+                  </div>
+                  
+                  <form onSubmit={handleConfigurarPrimeiroCofre} style={{ background: '#f8fafc', padding: '24px', borderRadius: '16px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#1e1b4b' }}>E-mail de Recuperação</label>
+                      <input type="email" value={inputEmail || dadosSeguranca.emailRecuperacao} onChange={e => setInputEmail(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#1e1b4b' }}>Senha Master Atual</label>
+                      <input type="text" value={inputNovaSenha || dadosSeguranca.senhaMaster} onChange={e => setInputNovaSenha(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px', color: '#b91c1c', fontWeight: 'bold' }} />
+                    </div>
+                    <button type="submit" style={{ background: '#2563eb', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><RefreshCw size={16} /> Atualizar Credenciais</button>
+                  </form>
+                </div>
               )}
             </div>
           )}
 
-          {/* ================= ABA: BACKUPS E MANUTENÇÃO ================= */}
           {abaAtiva === 'manutencao' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
               <div>
-                <h2 style={{ fontSize: '20px', color: '#1e1b4b', fontWeight: 'bold', margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '8px' }}><ShieldCheck size={22} color="#4f46e5" /> Cópias de Segurança</h2>
-                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
-                  <div style={{ border: '1px dashed #cbd5e1', padding: '20px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <h3 style={{ fontSize: '15px', color: '#1e1b4b', fontWeight: 'bold', margin: 0 }}>Exportar Backup</h3>
-                    <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>Baixe um arquivo contendo todo o seu banco de dados atual.</p>
-                    <button onClick={exportarBackup} style={{ background: '#f8fafc', color: '#1e1b4b', border: '1px solid #cbd5e1', padding: '10px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '13px', marginTop: 'auto' }}><Download size={16} /> Baixar JSON</button>
-                  </div>
-                  <div style={{ border: '1px dashed #cbd5e1', padding: '20px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <h3 style={{ fontSize: '15px', color: '#1e1b4b', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>Restaurar Sistema <Lock size={14} color="#ef4444"/></h3>
-                    <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>Suba um arquivo JSON exportado anteriormente.</p>
-                    <div style={{ position: 'relative', marginTop: 'auto' }}>
-                      <input type="file" accept=".json" onChange={tentarImportarBackup} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer', zIndex: 10 }} />
-                      <button type="button" style={{ background: '#10b981', color: 'white', border: 'none', padding: '12px', width: '100%', borderRadius: '8px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '14px' }}><UploadCloud size={16} /> Subir Arquivo</button>
-                    </div>
-                  </div>
+                <h2 style={{ fontSize: '20px', color: '#1e1b4b', fontWeight: 'bold', margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '8px' }}><FileText size={22} color="#2563eb" /> Backups e Restauração</h2>
+                
+                <div style={{ border: '1px dashed #cbd5e1', background: '#f8fafc', padding: '24px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'flex-start', marginBottom: '20px' }}>
+                  <h3 style={{ fontSize: '16px', color: '#1e1b4b', fontWeight: 'bold', margin: 0 }}>Exportar Dados da Loja (Backup)</h3>
+                  <p style={{ fontSize: '14px', color: '#64748b', margin: 0, lineHeight: '1.5', maxWidth: '600px' }}>
+                    Faça o download de um arquivo JSON contendo todos os dados do sistema. Guarde com segurança.
+                  </p>
+                  <button onClick={exportarBackup} style={{ background: '#2563eb', color: 'white', border: 'none', padding: '12px 24px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', marginTop: '8px' }}>
+                    <Download size={18} /> Baixar Arquivo JSON
+                  </button>
                 </div>
-              </div>
 
-              <div>
-                <h2 style={{ fontSize: '20px', color: '#ef4444', fontWeight: 'bold', margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '8px' }}><AlertTriangle size={22} color="#ef4444" /> Formatação do Sistema</h2>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <button onClick={() => tentarResetSeletivo('historico', 'Histórico de Vendas', 'historico')} style={{ background: 'transparent', color: '#ef4444', border: '1px solid #fee2e2', padding: '12px', borderRadius: '10px', fontWeight: '600', cursor: 'pointer', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Trash2 size={16}/> Limpar Histórico de Vendas</div> <Lock size={14}/>
-                  </button>
-                  <button onClick={() => tentarResetSeletivo('tudo', 'SISTEMA COMPLETO', 'master')} style={{ background: '#ef4444', color: 'white', border: 'none', padding: '16px', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginTop: '8px' }}>
-                    <AlertTriangle size={18}/> Formatar Sistema Inteiro
-                  </button>
+                <div style={{ border: '1px solid #e2e8f0', background: '#ffffff', padding: '24px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <h3 style={{ fontSize: '16px', color: '#1e1b4b', fontWeight: 'bold', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <UploadCloud size={20} color="#ef4444" /> Restaurar Sistema
+                  </h3>
+                  <p style={{ fontSize: '14px', color: '#64748b', margin: 0, lineHeight: '1.5', maxWidth: '600px' }}>
+                    Esta ação sobrescreve os dados atuais do banco utilizando um arquivo de backup anterior.
+                  </p>
+                  
+                  {!restoreDestrancado ? (
+                    <form onSubmit={handleDesbloquearRestore} style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+                      <input type="password" value={senhaRestore} onChange={e => setSenhaRestore(e.target.value)} placeholder="Senha Master ou 0000" required style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px' }} />
+                      <button type="submit" style={{ background: '#1e1b4b', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Liberar Envio</button>
+                    </form>
+                  ) : (
+                    <div style={{ width: '100%', padding: '20px', borderRadius: '8px', border: '2px dashed #ef4444', background: '#fef2f2', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative', cursor: 'pointer', marginTop: '8px' }}>
+                      <Upload size={30} color="#ef4444" style={{ marginBottom: '8px' }} />
+                      <span style={{ fontSize: '14px', color: '#b91c1c', fontWeight: '600' }}>Toque para anexar o arquivo .json</span>
+                      <input type="file" accept=".json" onChange={processarRestoreJSON} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }} />
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -729,39 +717,6 @@ export default function Configuracoes() {
 
         </div>
       </div>
-
-      {authModal.isOpen && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(15, 23, 42, 0.8)', backdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999, padding: '16px', boxSizing: 'border-box' }}>
-          <div style={{ background: '#ffffff', width: '100%', maxWidth: '400px', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)', boxSizing: 'border-box' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ margin: 0, color: '#ef4444', fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold' }}>
-                <Lock size={20} /> Autorização Necessária
-              </h3>
-              <button onClick={fecharModal} style={{ background: 'transparent', border: 'none', color: '#64748b', cursor: 'pointer', padding: 0 }}><X size={24}/></button>
-            </div>
-            <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '24px', lineHeight: '1.4', margin: 0, paddingBottom: '16px' }}>
-              Você está tentando <strong>{authModal.titulo}</strong>. Insira a senha definida nas configurações para confirmar.
-            </p>
-            <form onSubmit={confirmarAcesso} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#1e1b4b' }}>Senha de Acesso</label>
-                <input 
-                  type="password" 
-                  value={credenciais.senha} 
-                  onChange={e => setCredenciais({...credenciais, senha: e.target.value})} 
-                  style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#1e1b4b', outline: 'none', fontSize: '16px', width: '100%', boxSizing: 'border-box' }} 
-                  placeholder="Digite a senha..."
-                  required
-                />
-              </div>
-              <div style={{ display: 'flex', gap: '12px', marginTop: '12px', flexDirection: isMobile ? 'column' : 'row' }}>
-                <button type="button" onClick={fecharModal} style={{ flex: 1, background: 'transparent', border: '1px solid #cbd5e1', color: '#1e1b4b', padding: '14px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px' }}>Cancelar</button>
-                <button type="submit" style={{ flex: 1, background: '#ef4444', border: 'none', color: '#ffffff', padding: '14px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px' }}>Confirmar Ação</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

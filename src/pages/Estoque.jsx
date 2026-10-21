@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Search, Plus, Edit2, Image as ImageIcon, Filter, FileDown, X, Settings, Trash2, CreditCard, AlertCircle, Star, Palette, Eye, EyeOff } from 'lucide-react'
+import { Search, Plus, Edit2, FileDown, X, Settings, Trash2, Eye, EyeOff, Star, Palette, Sheet } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import { collection, getDocs, doc, getDoc, updateDoc, setDoc } from 'firebase/firestore'
@@ -17,9 +17,11 @@ export default function Estoque() {
   const [categoriasFavoritas, setCategoriasFavoritas] = useState([])
   const [categoriasOcultas, setCategoriasOcultas] = useState([])
   const [catalogoOculto, setCatalogoOculto] = useState(false)
-  const [corPrincipal, setCorPrincipal] = useState('#db2777')
+  const [corPrincipal, setCorPrincipal] = useState('#2563eb') // Azul como padrão
   
   const [modalGerenciarCategorias, setModalGerenciarCategorias] = useState(false)
+  const [modalExportar, setModalExportar] = useState(false)
+  const [categoriaExportacao, setCategoriaExportacao] = useState('Todas')
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
   useEffect(() => {
@@ -27,6 +29,29 @@ export default function Estoque() {
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
+
+  // Atalhos de Teclado
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'F1') {
+        e.preventDefault()
+        navigate('/estoque/novo')
+      } else if (e.key === 'F2') {
+        e.preventDefault()
+        if (produtoSelecionado) {
+          navigate(`/estoque/${produtoSelecionado.id}`)
+        }
+      } else if (e.key === 'F3') {
+        e.preventDefault()
+        document.getElementById('input-busca-estoque')?.focus()
+      } else if (e.key === 'F12') {
+        e.preventDefault()
+        setModalExportar(true)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [navigate, produtoSelecionado])
 
   useEffect(() => {
     const carregarConfiguracoesNuvem = async () => {
@@ -77,8 +102,28 @@ export default function Estoque() {
 
   const hexToRgba = (hex, opacity) => {
     let result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    if (!result) return `rgba(219, 39, 119, ${opacity})`; 
+    if (!result) return `rgba(37, 99, 235, ${opacity})`; // Fallback azul
     return `rgba(${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}, ${opacity})`;
+  }
+
+  const formatoMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(valor) || 0)
+
+  const formatarDataBrasil = (data) => {
+    if (!data) return '-';
+    let d;
+    if (data.seconds) { d = new Date(data.seconds * 1000); } 
+    else { d = new Date(data); }
+    
+    if (isNaN(d.getTime())) return typeof data === 'string' ? data : '-';
+    
+    const dia = String(d.getDate()).padStart(2, '0');
+    const mes = String(d.getMonth() + 1).padStart(2, '0');
+    const ano = d.getFullYear();
+    const horas = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    const seg = String(d.getSeconds()).padStart(2, '0');
+    
+    return `${dia}/${mes}/${ano} ${horas}:${min}:${seg}`;
   }
 
   let catSet = new Set()
@@ -120,8 +165,16 @@ export default function Estoque() {
     return matchBusca && matchCategoria
   })
 
+  const getProdutosParaExportar = () => {
+    return produtos.filter(produto => {
+      if (categoriaExportacao === 'Todas') return true;
+      if (categoriaExportacao === 'Promoções') return Number(produto.precoAntigo) > Number(produto.preco);
+      return (produto.categorias && produto.categorias.includes(categoriaExportacao)) || produto.categoria === categoriaExportacao;
+    });
+  }
+
   const gerarPDFEstoque = () => {
-    const formatoMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor)
+    const listaExportar = getProdutosParaExportar()
     const janelaImpressao = window.open('', '_blank')
 
     const htmlPDF = `
@@ -133,10 +186,10 @@ export default function Estoque() {
             .header { border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 30px; display: flex; justify-content: space-between; }
             .header h1 { margin: 0; color: #1e1b4b; font-size: 26px; }
             .header p { margin: 4px 0; color: #64748b; font-size: 14px; }
-            .titulo-relatorio { text-align: center; background: #f1f5f9; padding: 12px; border-radius: 8px; font-weight: bold; font-size: 18px; color: #4f46e5; margin-bottom: 30px; text-transform: uppercase; }
+            .titulo-relatorio { text-align: center; background: #f1f5f9; padding: 12px; border-radius: 8px; font-weight: bold; font-size: 18px; color: #2563eb; margin-bottom: 30px; text-transform: uppercase; }
             .tabela-estoque { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
-            .tabela-estoque th, .tabela-estoque td { border: 1px solid #e2e8f0; padding: 10px 12px; text-align: left; font-size: 14px; }
-            .tabela-estoque th { background: #f8fafc; color: #475569; font-size: 13px; text-transform: uppercase; }
+            .tabela-estoque th, .tabela-estoque td { border: 1px solid #e2e8f0; padding: 8px 10px; text-align: left; font-size: 13px; }
+            .tabela-estoque th { background: #f8fafc; color: #475569; font-size: 12px; text-transform: uppercase; }
             .footer-assinatura { margin-top: 60px; text-align: center; border-top: 1px solid #cbd5e1; padding-top: 20px; color: #64748b; font-size: 13px; }
           </style>
         </head>
@@ -149,36 +202,45 @@ export default function Estoque() {
               <p>Contato: ${dadosLoja.telefone || '-'} | ${dadosLoja.email || '-'}</p>
             </div>
             <div style="text-align: right;">
-              <p><strong>Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}</p>
-              <p>Total de Itens Listados: ${produtosFiltrados.length}</p>
+              <p><strong>Emissão:</strong> ${formatarDataBrasil(new Date())}</p>
+              <p>Filtro: ${categoriaExportacao}</p>
+              <p>Total de Itens: ${listaExportar.length}</p>
             </div>
           </div>
 
-          <div class="titulo-relatorio">Relatório de Estoque e Catálogo</div>
+          <div class="titulo-relatorio">Relatório Analítico (${categoriaExportacao})</div>
 
           <table class="tabela-estoque">
             <thead>
               <tr>
                 <th>Produto</th>
-                <th>Categoria</th>
                 <th>Cód. Barras</th>
                 <th>Qtd</th>
+                <th>Custo</th>
                 <th>Preço</th>
+                <th>Lucro</th>
+                <th>Cadastrado em</th>
               </tr>
             </thead>
             <tbody>
-              ${produtosFiltrados.length === 0 ? '<tr><td colspan="5" style="text-align: center; color: #94a3b8;">Nenhum produto encontrado.</td></tr>' : 
-                produtosFiltrados.map(p => `
-                <tr>
-                  <td style="font-weight: 600; color: #1e1b4b;">${p.nome}</td>
-                  <td>${p.categorias ? p.categorias.join(', ') : p.categoria}</td>
-                  <td>${p.codigoBarras || 'Sem código'}</td>
-                  <td style="color: ${p.quantidade > 0 ? '#059669' : '#ef4444'}; font-weight: bold;">
-                    ${p.quantidade > 0 ? p.quantidade + ' un' : 'Esgotado'}
-                  </td>
-                  <td style="font-weight: bold;">${formatoMoeda(p.preco)}</td>
-                </tr>
-              `).join('')}
+              ${listaExportar.length === 0 ? '<tr><td colspan="7" style="text-align: center; color: #94a3b8;">Nenhum produto encontrado.</td></tr>' : 
+                listaExportar.map(p => {
+                  const custo = Number(p.custo) || 0;
+                  const preco = Number(p.preco) || 0;
+                  const lucro = preco - custo;
+                  return `
+                  <tr>
+                    <td style="font-weight: 600; color: #1e1b4b;">${p.nome} <br/><small style="font-weight: normal; color: #64748b;">${p.categorias ? p.categorias.join(', ') : p.categoria}</small></td>
+                    <td>${p.codigoBarras || '-'}</td>
+                    <td style="color: ${p.quantidade > 0 ? '#059669' : '#ef4444'}; font-weight: bold;">
+                      ${p.quantidade > 0 ? p.quantidade + ' un' : 'Esgotado'}
+                    </td>
+                    <td>${formatoMoeda(custo)}</td>
+                    <td style="font-weight: bold;">${formatoMoeda(preco)}</td>
+                    <td style="color: ${lucro >= 0 ? '#059669' : '#ef4444'}; font-weight: bold;">${formatoMoeda(lucro)}</td>
+                    <td>${formatarDataBrasil(p.dataCadastro)}</td>
+                  </tr>
+                `}).join('')}
             </tbody>
           </table>
 
@@ -199,13 +261,44 @@ export default function Estoque() {
     janelaImpressao.document.close()
   }
 
-  const pegarPrimeiraFotoRecortada = (produto) => {
-    if (produto.fotos && produto.fotos.length > 0) return produto.fotos[0].recortada || produto.fotos[0]
-    if (produto.imagem) return produto.imagem
-    return null
-  }
+  const gerarPlanilhaCSV = () => {
+    const listaExportar = getProdutosParaExportar()
+    if (listaExportar.length === 0) {
+      alert("Não há produtos para exportar nesta categoria.")
+      return
+    }
 
-  const formatoMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(valor) || 0)
+    let csvContent = "Produto;Categoria;Codigo;Quantidade;Custo;Preco;Lucro;Data de Cadastro\n"
+
+    listaExportar.forEach(p => {
+      const nome = p.nome || ''
+      const cat = p.categorias ? p.categorias.join(', ') : (p.categoria || '')
+      const cod = p.codigoBarras || ''
+      const qtd = p.quantidade || 0
+      
+      const custoNum = Number(p.custo) || 0
+      const precoNum = Number(p.preco) || 0
+      
+      const custo = custoNum.toFixed(2).replace('.', ',')
+      const preco = precoNum.toFixed(2).replace('.', ',')
+      const lucro = (precoNum - custoNum).toFixed(2).replace('.', ',')
+      const dataCad = formatarDataBrasil(p.dataCadastro)
+
+      csvContent += `"${nome}";"${cat}";"${cod}";"${qtd}";"${custo}";"${preco}";"${lucro}";"${dataCad}"\n`
+    })
+
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement("a")
+    const url = URL.createObjectURL(blob)
+    
+    link.setAttribute("href", url)
+    link.setAttribute("download", `storefy_estoque_${categoriaExportacao.replace(/\s+/g, '_')}.csv`)
+    link.style.visibility = 'hidden'
+    
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
 
   const toggleFavorita = async (cat) => {
     let novasFavoritas = [...categoriasFavoritas]
@@ -322,6 +415,7 @@ export default function Estoque() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
+      {/* Modal Gerenciar Categorias */}
       {modalGerenciarCategorias && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.8)', zIndex: 6000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={() => setModalGerenciarCategorias(false)}>
           <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '500px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', padding: '24px' }} onClick={e => e.stopPropagation()}>
@@ -352,7 +446,7 @@ export default function Estoque() {
                       <button onClick={() => toggleFavorita(cat)} style={{ background: isFav ? hexToRgba(corPrincipal, 0.1) : 'white', border: isFav ? `1px solid ${corPrincipal}` : '1px solid #cbd5e1', padding: '6px', borderRadius: '6px', cursor: 'pointer', color: isFav ? corPrincipal : '#94a3b8' }}>
                         <Star size={16} fill={isFav ? corPrincipal : 'none'} color={isFav ? corPrincipal : '#94a3b8'} />
                       </button>
-                      <button onClick={() => renomearCategoria(cat)} style={{ background: '#e0e7ff', border: 'none', padding: '6px', borderRadius: '6px', cursor: 'pointer', color: '#4f46e5' }}><Edit2 size={16} /></button>
+                      <button onClick={() => renomearCategoria(cat)} style={{ background: '#e0e7ff', border: 'none', padding: '6px', borderRadius: '6px', cursor: 'pointer', color: '#2563eb' }}><Edit2 size={16} /></button>
                       <button onClick={() => excluirCategoria(cat)} style={{ background: '#fee2e2', border: 'none', padding: '6px', borderRadius: '6px', cursor: 'pointer', color: '#ef4444' }}><Trash2 size={16} /></button>
                     </div>
                   </div>
@@ -366,37 +460,58 @@ export default function Estoque() {
         </div>
       )}
 
+      {/* Modal Exportar Arquivos F12 */}
+      {modalExportar && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.8)', zIndex: 6000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={() => setModalExportar(false)}>
+          <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '400px', display: 'flex', flexDirection: 'column', padding: '24px' }} onClick={e => e.stopPropagation()}>
+            <h2 style={{ fontSize: '20px', color: '#1e1b4b', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px', marginTop: 0 }}>
+              <FileDown size={24} color="#2563eb" /> Exportar Dados [F12]
+            </h2>
+            
+            <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#475569', marginBottom: '8px' }}>Selecione a Categoria para Gerar:</label>
+            <select 
+              value={categoriaExportacao} 
+              onChange={(e) => setCategoriaExportacao(e.target.value)}
+              style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', width: '100%', marginBottom: '20px', fontSize: '14px', color: '#1e1b4b', outline: 'none' }}
+            >
+              {categoriasUnicas.map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+
+            <div style={{ display: 'flex', gap: '12px', flexDirection: 'column' }}>
+              <button onClick={() => { gerarPDFEstoque(); setModalExportar(false); }} style={{ background: '#2563eb', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', boxShadow: '0 4px 6px rgba(37, 99, 235, 0.2)' }}>
+                <FileDown size={18}/> Baixar PDF
+              </button>
+              <button onClick={() => { gerarPlanilhaCSV(); setModalExportar(false); }} style={{ background: '#10b981', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', boxShadow: '0 4px 6px rgba(16, 185, 129, 0.2)' }}>
+                <Sheet size={18}/> Baixar Excel
+              </button>
+              <button onClick={() => setModalExportar(false)} style={{ background: '#f1f5f9', color: '#475569', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', marginTop: '8px' }}>
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Produto Selecionado */}
       {produtoSelecionado && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 4000, padding: '20px' }} onClick={() => setProdutoSelecionado(null)}>
           <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '400px', overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }} onClick={(e) => e.stopPropagation()}>
-            <button onClick={() => setProdutoSelecionado(null)} style={{ position: 'absolute', top: '12px', right: '12px', background: 'rgba(0,0,0,0.5)', color: 'white', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 10 }}>
+            <button onClick={() => setProdutoSelecionado(null)} style={{ position: 'absolute', top: '12px', right: '12px', background: '#f1f5f9', color: '#1e1b4b', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 10 }}>
               <X size={16} />
             </button>
-            
-            <div style={{ width: '100%', height: '300px', display: 'flex', overflowX: 'auto', scrollSnapType: 'x mandatory', background: '#f8fafc', position: 'relative' }}>
-              {Number(produtoSelecionado.precoAntigo) > Number(produtoSelecionado.preco) && (
-                <div style={{ position: 'absolute', top: '12px', left: '12px', background: '#ef4444', color: 'white', fontSize: '12px', fontWeight: 'bold', padding: '6px 10px', borderRadius: '8px', zIndex: 5 }}>
-                  -{Math.round(((Number(produtoSelecionado.precoAntigo) - Number(produtoSelecionado.preco)) / Number(produtoSelecionado.precoAntigo)) * 100)}%
-                </div>
-              )}
-              {(() => {
-                const fotosParaMostrar = (produtoSelecionado.fotos && produtoSelecionado.fotos.length > 0) ? produtoSelecionado.fotos : (produtoSelecionado.imagem ? [produtoSelecionado.imagem] : [])
-                if (fotosParaMostrar.length === 0) {
-                  return <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><ImageIcon size={48} color="#cbd5e1" /></div>
-                }
-                return fotosParaMostrar.map((foto, idx) => (
-                  <img key={idx} src={foto.recortada || foto} alt={`Foto ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', flexShrink: 0, scrollSnapAlign: 'start' }} />
-                ))
-              })()}
-            </div>
 
-            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '20px' }}>
               <div>
-                <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase' }}>
+                <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '500' }}>
                   {produtoSelecionado.categorias ? produtoSelecionado.categorias.join(' • ') : produtoSelecionado.categoria}
                 </span>
                 <h2 style={{ fontSize: '20px', color: '#1e1b4b', margin: '4px 0 0 0', fontWeight: 'bold' }}>{produtoSelecionado.nome}</h2>
-                <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0 0', fontFamily: 'monospace' }}>Código: {produtoSelecionado.codigoBarras || 'Não cadastrado'}</p>
+                
+                <div style={{ marginTop: '4px', fontSize: '13px', color: '#94a3b8', fontFamily: 'monospace' }}>
+                  Cód: {produtoSelecionado.codigoBarras || 'S/N'}
+                </div>
               </div>
               
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9', padding: '12px 0' }}>
@@ -406,33 +521,33 @@ export default function Estoque() {
                       {formatoMoeda(produtoSelecionado.precoAntigo)}
                     </span>
                   )}
-                  <span style={{ fontSize: '24px', color: '#4f46e5', fontWeight: '900' }}>{formatoMoeda(produtoSelecionado.preco)}</span>
-                  
-                  {produtoSelecionado.mostrarParcelamento && produtoSelecionado.maxParcelas && Number(produtoSelecionado.maxParcelas) > 0 && (
-                     <span style={{ fontSize: '13px', color: '#64748b', fontWeight: 'bold', marginTop: '2px' }}>
-                       Cartão em até <span style={{ color: '#1e1b4b' }}>{produtoSelecionado.maxParcelas}x</span>
-                     </span>
-                  )}
+                  <span style={{ fontSize: '24px', color: '#2563eb', fontWeight: '900' }}>{formatoMoeda(produtoSelecionado.preco)}</span>
                 </div>
                 <span style={{ background: produtoSelecionado.quantidade > 0 ? '#d1fae5' : '#fee2e2', color: produtoSelecionado.quantidade > 0 ? '#059669' : '#dc2626', padding: '6px 12px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold' }}>
                   {produtoSelecionado.quantidade > 0 ? `Estoque: ${produtoSelecionado.quantidade}` : 'Esgotado'}
                 </span>
               </div>
 
-              {produtoSelecionado.mostrarAvisoAcrescimo && (
-                <div style={{ background: '#fffbeb', padding: '12px', borderRadius: '8px', border: '1px solid #fde68a', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <span style={{ fontSize: '12px', color: '#b45309', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <AlertCircle size={14} /> Valores a prazo podem sofrer acréscimos.
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Custo</span>
+                  <span style={{ fontSize: '15px', color: '#1e1b4b', fontWeight: '600' }}>{formatoMoeda(produtoSelecionado.custo || 0)}</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Lucro</span>
+                  <span style={{ fontSize: '15px', color: (Number(produtoSelecionado.preco) - Number(produtoSelecionado.custo)) >= 0 ? '#059669' : '#ef4444', fontWeight: '600' }}>
+                    {formatoMoeda(Number(produtoSelecionado.preco) - Number(produtoSelecionado.custo))}
                   </span>
                 </div>
-              )}
-
-              <div>
-                <h4 style={{ fontSize: '13px', color: '#475569', fontWeight: 'bold', margin: '0 0 6px 0' }}>Descrição</h4>
-                <p style={{ fontSize: '14px', color: '#64748b', margin: 0, lineHeight: '1.5', maxHeight: '120px', overflowY: 'auto' }}>
-                  {produtoSelecionado.descricao || 'Nenhuma descrição detalhada disponível.'}
-                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gridColumn: 'span 2', marginTop: '4px', borderTop: '1px dashed #cbd5e1', paddingTop: '10px' }}>
+                  <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Cadastrado em</span>
+                  <span style={{ fontSize: '14px', color: '#475569', fontWeight: '600' }}>{formatarDataBrasil(produtoSelecionado.dataCadastro)}</span>
+                </div>
               </div>
+
+              <button onClick={() => navigate(`/estoque/${produtoSelecionado.id}`)} style={{ background: '#2563eb', color: 'white', border: 'none', padding: '14px', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                <Edit2 size={16}/> Editar Produto [F2]
+              </button>
             </div>
           </div>
         </div>
@@ -441,10 +556,10 @@ export default function Estoque() {
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', flexWrap: 'wrap', gap: '16px', flexDirection: isMobile ? 'column' : 'row' }}>
         <div>
           <h1 style={{ fontSize: isMobile ? '24px' : '28px', color: '#1e1b4b', margin: 0 }}>Estoque</h1>
-          <p style={{ color: '#64748b', marginTop: '4px', margin: 0, fontSize: isMobile ? '14px' : '16px' }}>Gerencie seus produtos, preços e categorias</p>
+          <p style={{ color: '#64748b', marginTop: '4px', margin: 0, fontSize: isMobile ? '14px' : '16px' }}>Gerencie produtos, custos, lucros e listagens [F1]</p>
         </div>
         
-        <div style={{ display: 'flex', gap: '12px', width: isMobile ? '100%' : 'auto' }}>
+        <div style={{ display: 'flex', gap: '12px', width: isMobile ? '100%' : 'auto', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
           <button 
             onClick={() => navigate('/configuracoes', { state: { aba: 'catalogo' } })}
             style={{ flex: isMobile ? 1 : 'none', justifyContent: 'center', background: 'white', color: corPrincipal, border: '1px solid #e2e8f0', padding: '12px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
@@ -452,16 +567,16 @@ export default function Estoque() {
             <Palette size={18} /> Catálogo
           </button>
           <button 
-            onClick={gerarPDFEstoque}
-            style={{ flex: isMobile ? 1 : 'none', justifyContent: 'center', background: 'white', color: '#4f46e5', border: '1px solid #e2e8f0', padding: '12px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
+            onClick={() => setModalExportar(true)}
+            style={{ flex: isMobile ? 1 : 'none', justifyContent: 'center', background: 'white', color: '#2563eb', border: '1px solid #e2e8f0', padding: '12px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
           >
-            <FileDown size={18} /> PDF
+            <FileDown size={18} /> Exportar [F12]
           </button>
           <button 
             onClick={() => navigate('/estoque/novo')}
-            style={{ flex: isMobile ? 1 : 'none', justifyContent: 'center', background: '#4f46e5', color: 'white', border: 'none', padding: '12px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 6px -1px rgba(79, 70, 229, 0.2)' }}
+            style={{ flex: isMobile ? '100%' : 'none', justifyContent: 'center', background: '#2563eb', color: 'white', border: 'none', padding: '12px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.2)' }}
           >
-            <Plus size={18} /> Novo
+            <Plus size={18} /> Novo [F1]
           </button>
         </div>
       </header>
@@ -470,8 +585,9 @@ export default function Estoque() {
         <div style={{ display: 'flex', alignItems: 'center', background: 'white', padding: '12px 16px', borderRadius: '12px', width: '100%', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', boxSizing: 'border-box' }}>
           <Search size={20} color="#64748b" />
           <input 
+            id="input-busca-estoque"
             type="text" 
-            placeholder="Buscar nome, categoria ou código..." 
+            placeholder="Buscar nome, categoria ou código... [F3]" 
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
             style={{ border: 'none', background: 'transparent', outline: 'none', marginLeft: '10px', width: '100%', color: '#1e1b4b', fontSize: '15px' }}
@@ -485,7 +601,7 @@ export default function Estoque() {
               <button 
                 key={cat} 
                 onClick={() => setCategoriaFiltro(cat)} 
-                style={{ padding: '10px 20px', borderRadius: '10px', background: categoriaFiltro === cat ? '#4f46e5' : '#f1f5f9', color: categoriaFiltro === cat ? 'white' : '#64748b', border: 'none', fontWeight: 'bold', cursor: 'pointer', flexShrink: 0, fontSize: '14px', whiteSpace: 'nowrap', transition: '0.2s', boxShadow: categoriaFiltro === cat ? '0 4px 6px rgba(79, 70, 229, 0.2)' : 'none', display: 'flex', alignItems: 'center', gap: '6px' }}
+                style={{ padding: '10px 20px', borderRadius: '10px', background: categoriaFiltro === cat ? '#2563eb' : '#f1f5f9', color: categoriaFiltro === cat ? 'white' : '#64748b', border: 'none', fontWeight: 'bold', cursor: 'pointer', flexShrink: 0, fontSize: '14px', whiteSpace: 'nowrap', transition: '0.2s', boxShadow: categoriaFiltro === cat ? '0 4px 6px rgba(37, 99, 235, 0.2)' : 'none', display: 'flex', alignItems: 'center', gap: '6px' }}
               >
                 {isFav && <Star size={14} fill={categoriaFiltro === cat ? 'white' : corPrincipal} color={categoriaFiltro === cat ? 'white' : corPrincipal} />}
                 {cat}
@@ -503,74 +619,68 @@ export default function Estoque() {
           Carregando produtos do servidor Google...
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '140px' : '240px'}, 1fr))`, gap: isMobile ? '12px' : '24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '160px' : '240px'}, 1fr))`, gap: '16px' }}>
           {produtosFiltrados.map((produto) => {
-            const fotoPrincipal = pegarPrimeiraFotoRecortada(produto)
             const temDesconto = Number(produto.precoAntigo) > Number(produto.preco)
+            const custo = Number(produto.custo) || 0
+            const preco = Number(produto.preco) || 0
+            const lucro = preco - custo
 
             return (
               <div 
                 key={produto.id} 
                 onClick={() => setProdutoSelecionado(produto)}
-                style={{ background: 'white', borderRadius: '16px', padding: isMobile ? '12px' : '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', position: 'relative', cursor: 'pointer' }}
+                style={{ background: 'white', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 4px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '8px', cursor: 'pointer', transition: 'transform 0.1s', position: 'relative' }}
+                onMouseOver={(e) => e.currentTarget.style.borderColor = '#2563eb'}
+                onMouseOut={(e) => e.currentTarget.style.borderColor = '#e2e8f0'}
               >
-                
                 <button 
                   onClick={(e) => { e.stopPropagation(); navigate(`/estoque/${produto.id}`) }}
-                  style={{ position: 'absolute', top: isMobile ? '16px' : '24px', right: isMobile ? '16px' : '24px', background: 'rgba(255,255,255,0.9)', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', zIndex: 10 }}
+                  style={{ position: 'absolute', top: '12px', right: '12px', background: '#f8fafc', color: '#2563eb', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 10 }}
                 >
-                  <Edit2 size={16} color="#4f46e5" />
+                  <Edit2 size={14} />
                 </button>
 
-                <div style={{ width: '100%', height: isMobile ? '120px' : '220px', borderRadius: '12px', overflow: 'hidden', background: '#f8fafc', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-                  {temDesconto && (
-                    <div style={{ position: 'absolute', top: '8px', left: '8px', background: '#ef4444', color: 'white', fontSize: '10px', fontWeight: 'bold', padding: '4px 6px', borderRadius: '6px', zIndex: 5 }}>
-                      -{Math.round(((Number(produto.precoAntigo) - Number(produto.preco)) / Number(produto.precoAntigo)) * 100)}%
-                    </div>
-                  )}
-                  {fotoPrincipal ? (
-                    <img src={fotoPrincipal} alt={produto.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  ) : (
-                    <ImageIcon size={32} color="#cbd5e1" />
-                  )}
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
-                  <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ marginBottom: '2px', paddingRight: '32px' }}>
+                  <span style={{ fontSize: '11px', color: '#64748b', fontWeight: '500' }}>
                     {produto.categorias ? produto.categorias.join(' • ') : produto.categoria}
                   </span>
-                  
-                  <h3 style={{ fontSize: isMobile ? '13px' : '16px', color: '#1e1b4b', fontWeight: 'bold', margin: '4px 0 12px 0', lineHeight: '1.3' }}>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
+                  <h3 style={{ fontSize: '16px', color: '#1e1b4b', fontWeight: 'bold', margin: '0', lineHeight: '1.3' }}>
                     {produto.nome}
                   </h3>
-                  
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: 'auto', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '4px' : '0' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      {temDesconto && (
-                        <span style={{ fontSize: '12px', color: '#94a3b8', textDecoration: 'line-through', fontWeight: 'bold', marginBottom: '-2px' }}>
-                          {formatoMoeda(produto.precoAntigo)}
-                        </span>
-                      )}
-                      <span style={{ fontSize: isMobile ? '15px' : '18px', color: '#4f46e5', fontWeight: '800' }}>
-                        {formatoMoeda(produto.preco)}
-                      </span>
-                    </div>
-                    
-                    {produto.quantidade > 0 ? (
-                      <span style={{ background: '#d1fae5', color: '#059669', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', alignSelf: isMobile ? 'flex-start' : 'center' }}>
-                        Estoque: {produto.quantidade}
-                      </span>
-                    ) : (
-                      <span style={{ background: '#fee2e2', color: '#dc2626', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', alignSelf: isMobile ? 'flex-start' : 'center' }}>
-                        Esgotado
-                      </span>
-                    )}
-                  </div>
+                  {temDesconto && <span style={{ color: '#ef4444', fontWeight: 'bold', fontSize: '10px', background: '#fee2e2', padding: '2px 6px', borderRadius: '4px' }}>Promo</span>}
+                </div>
 
-                  <div style={{ marginTop: '12px', borderTop: '1px dashed #e2e8f0', paddingTop: '8px', textAlign: 'center' }}>
-                    <span style={{ fontSize: '10px', color: '#94a3b8', fontFamily: 'monospace' }}>
-                      {produto.codigoBarras ? `Cód: ${produto.codigoBarras}` : 'Sem código de barras'}
-                    </span>
+                <div style={{ marginBottom: '8px', marginTop: '2px' }}>
+                  <span style={{ fontSize: '12px', color: '#94a3b8', fontFamily: 'monospace' }}>
+                    Cód: {produto.codigoBarras || 'S/N'}
+                  </span>
+                </div>
+                
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
+                  <span style={{ fontSize: '20px', color: '#2563eb', fontWeight: '900' }}>
+                    {formatoMoeda(preco)}
+                  </span>
+                  <span style={{ fontSize: '12px', color: produto.quantidade > 0 ? '#059669' : '#ef4444', fontWeight: 'bold', background: produto.quantidade > 0 ? '#d1fae5' : '#fee2e2', padding: '4px 8px', borderRadius: '6px' }}>
+                    Qtd: {produto.quantidade}
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '12px', background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Custo</span>
+                    <span style={{ fontSize: '13px', color: '#1e1b4b', fontWeight: '600' }}>{formatoMoeda(custo)}</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Lucro</span>
+                    <span style={{ fontSize: '13px', color: lucro >= 0 ? '#059669' : '#ef4444', fontWeight: '600' }}>{formatoMoeda(lucro)}</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gridColumn: 'span 2', marginTop: '4px', borderTop: '1px dashed #cbd5e1', paddingTop: '6px' }}>
+                    <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Cadastrado em</span>
+                    <span style={{ fontSize: '12px', color: '#475569', fontWeight: '500' }}>{formatarDataBrasil(produto.dataCadastro)}</span>
                   </div>
                 </div>
               </div>
