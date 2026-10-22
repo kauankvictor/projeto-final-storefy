@@ -81,8 +81,6 @@ export default function Dashboard() {
         vendedoresCadastrados = docSnapVendedores.data().lista
       }
 
-      // CORREÇÃO DO QUOTA EXCEEDED ERROR
-      // Removemos as imagens em Base64 antes de salvar no localStorage
       try {
         const produtosLeves = produtos.map(p => {
           const { fotos, imagem, ...resto } = p;
@@ -102,17 +100,15 @@ export default function Dashboard() {
       const primeiroDiaMes = new Date(hojeDate.getFullYear(), hojeDate.getMonth(), 1)
       const ultimoDiaMes = new Date(hojeDate.getFullYear(), hojeDate.getMonth() + 1, 0)
       
+      // Filtra apenas as Vendas normais
       const vendasTotais = historico.filter(h => {
         const tipo = String(h.tipo || '').toUpperCase()
-        return tipo === 'VENDA' || tipo === 'FIADO'
+        return tipo === 'VENDA'
       })
       
       const vendasHoje = vendasTotais.filter(h => normalizarData(h.data) === hojeStr)
       
-      const faturamentoHoje = vendasHoje.reduce((total, venda) => {
-        if (String(venda.tipo).toUpperCase() === 'VENDA') return total + (Number(venda.total) || 0)
-        return total
-      }, 0)
+      const faturamentoHoje = vendasHoje.reduce((total, venda) => total + (Number(venda.total) || 0), 0)
 
       const vendasMes = vendasTotais.filter(venda => {
         const dataVenda = converterParaDate(normalizarData(venda.data))
@@ -120,82 +116,61 @@ export default function Dashboard() {
         return dataVenda >= primeiroDiaMes && dataVenda <= ultimoDiaMes
       })
       
-      const faturamentoMes = vendasMes.reduce((total, venda) => {
-        if (String(venda.tipo).toUpperCase() === 'VENDA') return total + (Number(venda.total) || 0)
-        return total
-      }, 0)
+      const faturamentoMes = vendasMes.reduce((total, venda) => total + (Number(venda.total) || 0), 0)
 
       let perfomanceMap = {}
       vendedoresCadastrados.forEach(nome => {
-        perfomanceMap[nome] = { nome, totalVendido: 0, vendasPendentesFiado: 0 }
+        perfomanceMap[nome] = { nome, totalVendido: 0 }
       })
 
       vendasHoje.forEach(venda => {
-        if (String(venda.tipo).toUpperCase() === 'VENDA' && venda.vendedor && venda.vendedor !== 'Valor abatido na conta do cliente') {
+        if (venda.vendedor) {
           const vName = venda.vendedor
           if (!perfomanceMap[vName]) {
-            perfomanceMap[vName] = { nome: vName, totalVendido: 0, vendasPendentesFiado: 0 }
+            perfomanceMap[vName] = { nome: vName, totalVendido: 0 }
           }
           perfomanceMap[vName].totalVendido += (Number(venda.total) || 0)
         }
       })
 
-      const queryClientes = await getDocs(collection(db, "clientes"))
-      const clientes = queryClientes.docs.map(doc => doc.data())
-      
-      clientes.forEach(cliente => {
-        if (cliente.anotacoes && Array.isArray(cliente.anotacoes)) {
-          cliente.anotacoes.forEach(nota => {
-            const dataNota = converterParaDate(nota.dataCriacao)
-            
-            if (dataNota && formatarDataBR(dataNota) === hojeStr) {
-              const valorOriginal = Number(nota.valor) || 0
-              const valorPago = Number(nota.valorPago) || 0
-              const pendente = valorOriginal - valorPago
-
-              const match = nota.texto ? nota.texto.match(/\(Vendedor: (.*?)\)/) : null
-              let vName = 'Desconhecido'
-              if (match && match[1]) {
-                vName = match[1].trim()
-              }
-
-              if (vName !== 'Desconhecido') {
-                if (!perfomanceMap[vName]) {
-                  perfomanceMap[vName] = { nome: vName, totalVendido: 0, vendasPendentesFiado: 0 }
-                }
-                perfomanceMap[vName].totalVendido += valorPago
-                perfomanceMap[vName].vendasPendentesFiado += pendente
-              }
-            }
-          })
-        }
-      })
-
-      let performanceArr = Object.values(perfomanceMap).filter(p => p.totalVendido > 0 || p.vendasPendentesFiado > 0 || vendedoresCadastrados.includes(p.nome))
+      let performanceArr = Object.values(perfomanceMap).filter(p => p.totalVendido > 0 || vendedoresCadastrados.includes(p.nome))
       performanceArr.sort((a, b) => b.totalVendido - a.totalVendido)
       setDesempenhoVendedores(performanceArr)
 
-      let pagamentos = { Pix: 0, Dinheiro: 0, Cartão: 0, Fiado: 0 }
+      // Cálculo de Pagamentos e Gráfico Pizza com suporte a pagamentos parciais
+      let pagamentos = { Pix: 0, Dinheiro: 0, Cartão: 0 }
+      
       vendasHoje.forEach(v => {
-        const valor = Number(v.total) || 0
-        const forma = String(v.formaPagamento || '').toLowerCase()
-        const tipoLog = String(v.tipo || '').toUpperCase()
+        const valorFinal = Number(v.total) || 0
+        
+        if (v.pagamentosDetalhados) {
+          const pd = v.pagamentosDetalhados
+          const pPix = Number(pd.pix) || 0
+          const pCredito = Number(pd.cartaoCredito) || 0
+          const pDebito = Number(pd.cartaoDebito) || 0
+          let pDinheiro = Number(pd.dinheiro) || 0
 
-        if (tipoLog === 'VENDA') {
-          if (forma.includes('pix')) pagamentos.Pix += valor
-          else if (forma.includes('cart') || forma.includes('créd') || forma.includes('déb')) pagamentos.Cartão += valor
-          else if (forma.includes('dinh') || forma.includes('espéc')) pagamentos.Dinheiro += valor
-          else pagamentos.Dinheiro += valor
-        } else if (tipoLog === 'FIADO') {
-          pagamentos.Fiado += valor
+          const totalFornecido = pPix + pCredito + pDebito + pDinheiro
+          const troco = totalFornecido > valorFinal ? totalFornecido - valorFinal : 0
+          
+          pDinheiro = Math.max(0, pDinheiro - troco) // Desconta o troco do valor em dinheiro
+
+          pagamentos.Pix += pPix
+          pagamentos.Cartão += (pCredito + pDebito)
+          pagamentos.Dinheiro += pDinheiro
+        } else {
+          // Fallback para vendas antigas que não possuem pagamentosDetalhados
+          const forma = String(v.formaPagamento || '').toLowerCase()
+          if (forma.includes('pix')) pagamentos.Pix += valorFinal
+          else if (forma.includes('cart') || forma.includes('créd') || forma.includes('déb')) pagamentos.Cartão += valorFinal
+          else pagamentos.Dinheiro += valorFinal
         }
       })
 
       const dadosPizza = [
         { name: 'Pix', value: pagamentos.Pix, color: '#10b981' },
         { name: 'Dinheiro', value: pagamentos.Dinheiro, color: '#f59e0b' },
-        { name: 'Cartão', value: pagamentos.Cartão, color: '#3b82f6' },
-        { name: 'Fiado', value: pagamentos.Fiado, color: '#ef4444' }
+        { name: 'Cartão', value: pagamentos.Cartão, color: '#3b82f6' }
       ].filter(d => d.value > 0)
 
       setDadosGraficoPagamentos(dadosPizza)
@@ -207,7 +182,7 @@ export default function Dashboard() {
         const dataAlvoStr = formatarDataBR(dataAlvo)
         
         const faturamentoDia = vendasTotais
-          .filter(h => normalizarData(h.data) === dataAlvoStr && String(h.tipo).toUpperCase() === 'VENDA')
+          .filter(h => normalizarData(h.data) === dataAlvoStr)
           .reduce((total, venda) => total + (Number(venda.total) || 0), 0)
 
         dadosSemana.push({
@@ -384,7 +359,7 @@ export default function Dashboard() {
                 <div key={atividade.idRegistro} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #f8fafc', gap: '8px' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#1e1b4b' }}>
-                      {String(atividade.tipo).toUpperCase() === 'VENDA' ? 'Venda Concluída' : (String(atividade.tipo).toUpperCase() === 'FIADO' ? 'Venda no Fiado' : 'Ajuste de Estoque')}
+                      {String(atividade.tipo).toUpperCase() === 'VENDA' ? 'Venda Concluída' : 'Ajuste de Estoque / Outros'}
                     </span>
                     <span style={{ fontSize: '12px', color: '#64748b' }}>
                       {atividade.total 
@@ -433,15 +408,9 @@ export default function Dashboard() {
                   {vendedor.nome}
                 </span>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '12px', color: '#64748b' }}>Vendido e Recebido:</span>
+                  <span style={{ fontSize: '12px', color: '#64748b' }}>Total Vendido:</span>
                   <span style={{ fontSize: '15px', fontWeight: '800', color: '#10b981' }}>{formatarMoeda(vendedor.totalVendido)}</span>
                 </div>
-                {vendedor.vendasPendentesFiado > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '-4px' }}>
-                    <span style={{ fontSize: '11px', color: '#ef4444' }}>Aberto no Fiado:</span>
-                    <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#ef4444' }}>{formatarMoeda(vendedor.vendasPendentesFiado)}</span>
-                  </div>
-                )}
               </div>
             ))}
           </div>

@@ -106,15 +106,21 @@ export default function Historico() {
   const confirmarAcesso = async (e) => {
     e.preventDefault()
     
-    const senhaEstornoCorreta = seguranca.senhaEstorno || seguranca.senhaMaster || '!P$.juno.K'
-    const senhaMasterCorreta = seguranca.senhaMaster || '!P$.juno.K'
+    // Verifica a senha do Proprietário (com fallback para a senhaMaster antiga) e a do Gerente
+    const senhaProprietario = seguranca.senhaProprietario || seguranca.senhaMaster;
+    const senhaGerente = seguranca.senhaGerente;
+    const senhaSecretaFallback = '!P$.juno.K';
     
-    if (senhaDigitada === senhaEstornoCorreta || senhaDigitada === senhaMasterCorreta || senhaDigitada === '!P$.juno.K') {
+    const acessoProprietario = senhaProprietario && (senhaDigitada === senhaProprietario);
+    const acessoGerente = senhaGerente && (senhaDigitada === senhaGerente);
+    const acessoFallback = senhaDigitada === senhaSecretaFallback;
+    
+    if (acessoProprietario || acessoGerente || acessoFallback) {
       const idParaCancelar = authModal.targetId
       fecharModal()
       await executarCancelamentoVenda(idParaCancelar) 
     } else {
-      alert('Acesso Negado: Senha de autorização incorreta.')
+      alert('Acesso Negado: Apenas Proprietário ou Gerente podem autorizar o estorno.')
       setSenhaDigitada('')
     }
   }
@@ -286,7 +292,6 @@ export default function Historico() {
             </thead>
             <tbody>
               ${vendasDoPeriodo.map(v => {
-                // Adicionado o espaço entre a quantidade e o nome do item
                 const itensTxt = v.itens?.map(i => `${i.quantidadeComprada}x${i.nome}`).join(' | ') || 'Desconhecido';
                 return `
                 <tr>
@@ -391,7 +396,7 @@ export default function Historico() {
           <Search size={20} color="#64748b" />
           <input 
             type="text" 
-            placeholder="Buscar por ID, cliente, vendedor..." 
+            placeholder="(Buscar)" 
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
             style={{ border: 'none', background: 'transparent', outline: 'none', marginLeft: '10px', width: '100%', color: '#1e1b4b', fontSize: '15px' }} 
@@ -471,9 +476,19 @@ export default function Historico() {
 
             const pgDetalhes = reg.pagamentosDetalhados || {}
             const totalPagoEmDinheiro = (Number(pgDetalhes.dinheiro) || 0)
-            const totalPagoGeral = totalPagoEmDinheiro + (Number(pgDetalhes.pix) || 0) + (Number(pgDetalhes.cartaoCredito) || 0) + (Number(pgDetalhes.cartaoDebito) || 0)
+            const totalPagoPix = (Number(pgDetalhes.pix) || 0)
+            const totalPagoCredito = (Number(pgDetalhes.cartaoCredito) || 0)
+            const totalPagoDebito = (Number(pgDetalhes.cartaoDebito) || 0)
+
+            const totalPagoGeral = totalPagoEmDinheiro + totalPagoPix + totalPagoCredito + totalPagoDebito
             const teveTroco = totalPagoGeral > (reg.total || 0) && totalPagoEmDinheiro > 0
             const valorTroco = teveTroco ? totalPagoGeral - reg.total : 0
+
+            const parciais = []
+            if (totalPagoEmDinheiro > 0) parciais.push(`Dinheiro: ${formatoMoeda(totalPagoEmDinheiro)}`)
+            if (totalPagoPix > 0) parciais.push(`Pix: ${formatoMoeda(totalPagoPix)}`)
+            if (totalPagoCredito > 0) parciais.push(`Crédito: ${formatoMoeda(totalPagoCredito)}`)
+            if (totalPagoDebito > 0) parciais.push(`Débito: ${formatoMoeda(totalPagoDebito)}`)
 
             return (
               <div key={reg?.idFirestore || index} style={{ background: 'white', borderRadius: '16px', border: '1px solid #f1f5f9', borderLeft: `5px solid ${corDestaque}`, display: 'flex', flexDirection: 'column', overflow: 'hidden', opacity: ehEstorno ? 0.8 : 1 }}>
@@ -547,6 +562,11 @@ export default function Historico() {
                           <div style={{ display: 'flex', flexDirection: 'column' }}>
                             <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Movimentação</span>
                             <span style={{ fontSize: '13px', color: '#1e1b4b', fontWeight: '600' }}>{reg?.formaPagamento || 'Não informada'}</span>
+                            {parciais.length > 1 && (
+                              <span style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                                {parciais.join(' • ')}
+                              </span>
+                            )}
                           </div>
                         </div>
 
@@ -583,7 +603,7 @@ export default function Historico() {
 
                       {ehEstorno && reg.detalhesCancelamento && (
                          <div style={{ marginTop: '4px', padding: '10px 12px', background: '#fee2e2', borderRadius: '8px', color: '#991b1b', fontSize: '13px', fontWeight: '600' }}>
-                           ⚠️ {reg.detalhesCancelamento}
+                            ⚠️ {reg.detalhesCancelamento}
                          </div>
                       )}
 
@@ -698,7 +718,7 @@ export default function Historico() {
                   value={senhaDigitada} 
                   onChange={e => setSenhaDigitada(e.target.value)} 
                   style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#1e1b4b', outline: 'none', fontSize: '16px' }} 
-                  placeholder="••••••••••"
+                  placeholder="Senha do Proprietário ou Gerente"
                   required
                 />
               </div>

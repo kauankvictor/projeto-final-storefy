@@ -32,9 +32,16 @@ export default function Venda() {
   const [erro, setErro] = useState('')
   const [sucesso, setSucesso] = useState(false)
   const [processando, setProcessando] = useState(false)
+  const [confirmarLimpezaAtiva, setConfirmarLimpezaAtiva] = useState(false)
 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+  
+  // Referências para os inputs de atalhos
   const inputBuscaRef = useRef(null)
+  const dinheiroRef = useRef(null)
+  const pixRef = useRef(null)
+  const creditoRef = useRef(null)
+  const debitoRef = useRef(null)
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768)
@@ -42,9 +49,11 @@ export default function Venda() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
+  // Gerenciador de atalhos do teclado
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'F11') {
+      // F1: Pagar / Confirmar Venda
+      if (e.key === 'F1') {
         e.preventDefault()
         if (modalConfirmacao) {
           document.getElementById('btn-confirmar-venda')?.click()
@@ -52,25 +61,69 @@ export default function Venda() {
           document.getElementById('btn-fechar-venda')?.click()
         }
       }
+      
+      // F3: Focar na barra de busca
+      if (e.key === 'F3') {
+        e.preventDefault()
+        if (!modalConfirmacao && !confirmarLimpezaAtiva) {
+          inputBuscaRef.current?.focus()
+        }
+      }
+
+      if (modalConfirmacao) {
+        // Atalhos de pagamento
+        if (e.key === 'F6') { e.preventDefault(); dinheiroRef.current?.focus() }
+        if (e.key === 'F7') { e.preventDefault(); pixRef.current?.focus() }
+        if (e.key === 'F8') { e.preventDefault(); creditoRef.current?.focus() }
+        if (e.key === 'F9') { e.preventDefault(); debitoRef.current?.focus() }
+        
+        // F10: Cancelar tela de pagamento
+        if (e.key === 'F10') {
+          e.preventDefault()
+          setModalConfirmacao(false)
+          setErro('')
+        }
+      } else {
+        // F10: Limpar carrinho na tela principal
+        if (e.key === 'F10') {
+          e.preventDefault()
+          if (carrinho.length > 0) {
+            if (confirmarLimpezaAtiva) {
+              setCarrinho([])
+              setConfirmarLimpezaAtiva(false)
+              inputBuscaRef.current?.focus()
+            } else {
+              setConfirmarLimpezaAtiva(true)
+            }
+          }
+        }
+        
+        // ESC: Cancela a confirmação de limpar carrinho
+        if (e.key === 'Escape' && confirmarLimpezaAtiva) {
+          setConfirmarLimpezaAtiva(false)
+          inputBuscaRef.current?.focus()
+        }
+      }
     }
+
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [modalConfirmacao])
+  }, [modalConfirmacao, confirmarLimpezaAtiva, carrinho])
 
   useEffect(() => {
-    if (!modalConfirmacao) {
+    if (!modalConfirmacao && !confirmarLimpezaAtiva) {
       inputBuscaRef.current?.focus()
     }
-  }, [modalConfirmacao])
+  }, [modalConfirmacao, confirmarLimpezaAtiva])
 
   useEffect(() => {
-    if (modalConfirmacao) {
+    if (modalConfirmacao || confirmarLimpezaAtiva) {
       document.body.style.overflow = 'hidden'
     } else {
       document.body.style.overflow = 'auto'
     }
     return () => { document.body.style.overflow = 'auto' }
-  }, [modalConfirmacao])
+  }, [modalConfirmacao, confirmarLimpezaAtiva])
 
   useEffect(() => {
     const carregarDadosNuvem = async () => {
@@ -296,6 +349,17 @@ export default function Venda() {
         </div>
       )}
 
+      {/* MODAL CONFIRMAÇÃO DE LIMPEZA DO CARRINHO */}
+      {confirmarLimpezaAtiva && !modalConfirmacao && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 6000, padding: '20px' }}>
+          <div style={{ background: 'white', padding: '32px', borderRadius: '20px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
+            <AlertCircle size={64} color="#ef4444" />
+            <h2 style={{ fontSize: '24px', color: '#1e1b4b', margin: 0 }}>Excluir todos os produtos?</h2>
+            <p style={{ color: '#64748b', margin: 0 }}>Pressione <strong>[F10]</strong> novamente para confirmar ou <strong>[ESC]</strong> para cancelar.</p>
+          </div>
+        </div>
+      )}
+
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px', position: 'relative' }}>
         <header>
           <h1 style={{ fontSize: isMobile ? '24px' : '28px', color: '#1e1b4b', margin: 0 }}>Frente de Caixa</h1>
@@ -314,7 +378,7 @@ export default function Venda() {
             <input 
               ref={inputBuscaRef}
               type="text" 
-              placeholder="Bipe com o leitor ou digite o nome do produto..." 
+              placeholder="Bipe com o leitor ou digite o nome do produto... [F3 para focar]" 
               value={busca} 
               onChange={(e) => setBusca(e.target.value)} 
               onKeyDown={handleBuscaKeyDown}
@@ -422,7 +486,7 @@ export default function Venda() {
           </div>
 
           <button id="btn-fechar-venda" onClick={prepararVenda} style={{ background: '#4f46e5', color: 'white', border: 'none', padding: '20px', borderRadius: '16px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '12px', fontWeight: '900', cursor: 'pointer', fontSize: '20px', transition: '0.2s', boxShadow: '0 10px 15px -3px rgba(79, 70, 229, 0.4)' }} onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
-            PAGAR [F11] <CheckCircle size={24} />
+            PAGAR [F1] <CheckCircle size={24} />
           </button>
         </div>
       </div>
@@ -480,7 +544,7 @@ export default function Venda() {
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fee2e2', padding: '0 12px', borderRadius: '8px', border: '1px solid #ef4444', flex: 1 }}>
                             <Lock size={16} color="#ef4444"/>
                             <input 
-                              type="password" placeholder="Senha do Gerente ou Proprietário" value={senhaDesconto} onChange={(e) => setSenhaDesconto(e.target.value)}
+                              type="password" placeholder="Senha Gerente/Prop." value={senhaDesconto} onChange={(e) => setSenhaDesconto(e.target.value)}
                               style={{ border: 'none', outline: 'none', width: '100%', padding: '10px 0', fontSize: '14px', background: 'transparent' }}
                             />
                           </div>
@@ -522,20 +586,20 @@ export default function Venda() {
                   
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f8fafc', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                      <label style={{ flex: 1, fontSize: '14px', fontWeight: '700', color: '#1e1b4b' }}>Dinheiro:</label>
-                      <input type="number" placeholder="0.00" value={pagamentos.dinheiro} onChange={e => setPagamentos({...pagamentos, dinheiro: e.target.value})} style={{ width: '80px', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', textAlign: 'right', fontSize: '16px', fontWeight: 'bold' }} />
+                      <label style={{ flex: 1, fontSize: '13px', fontWeight: '700', color: '#1e1b4b' }}>Dinheiro [F6]:</label>
+                      <input ref={dinheiroRef} type="number" placeholder="0.00" value={pagamentos.dinheiro} onChange={e => setPagamentos({...pagamentos, dinheiro: e.target.value})} style={{ width: '80px', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', textAlign: 'right', fontSize: '16px', fontWeight: 'bold' }} />
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f8fafc', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                      <label style={{ flex: 1, fontSize: '14px', fontWeight: '700', color: '#1e1b4b' }}>Pix:</label>
-                      <input type="number" placeholder="0.00" value={pagamentos.pix} onChange={e => setPagamentos({...pagamentos, pix: e.target.value})} style={{ width: '80px', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', textAlign: 'right', fontSize: '16px', fontWeight: 'bold' }} />
+                      <label style={{ flex: 1, fontSize: '13px', fontWeight: '700', color: '#1e1b4b' }}>Pix [F7]:</label>
+                      <input ref={pixRef} type="number" placeholder="0.00" value={pagamentos.pix} onChange={e => setPagamentos({...pagamentos, pix: e.target.value})} style={{ width: '80px', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', textAlign: 'right', fontSize: '16px', fontWeight: 'bold' }} />
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f8fafc', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                      <label style={{ flex: 1, fontSize: '14px', fontWeight: '700', color: '#1e1b4b' }}>Crédito:</label>
-                      <input type="number" placeholder="0.00" value={pagamentos.cartaoCredito} onChange={e => setPagamentos({...pagamentos, cartaoCredito: e.target.value})} style={{ width: '80px', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', textAlign: 'right', fontSize: '16px', fontWeight: 'bold' }} />
+                      <label style={{ flex: 1, fontSize: '13px', fontWeight: '700', color: '#1e1b4b' }}>Crédito [F8]:</label>
+                      <input ref={creditoRef} type="number" placeholder="0.00" value={pagamentos.cartaoCredito} onChange={e => setPagamentos({...pagamentos, cartaoCredito: e.target.value})} style={{ width: '80px', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', textAlign: 'right', fontSize: '16px', fontWeight: 'bold' }} />
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f8fafc', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                      <label style={{ flex: 1, fontSize: '14px', fontWeight: '700', color: '#1e1b4b' }}>Débito:</label>
-                      <input type="number" placeholder="0.00" value={pagamentos.cartaoDebito} onChange={e => setPagamentos({...pagamentos, cartaoDebito: e.target.value})} style={{ width: '80px', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', textAlign: 'right', fontSize: '16px', fontWeight: 'bold' }} />
+                      <label style={{ flex: 1, fontSize: '13px', fontWeight: '700', color: '#1e1b4b' }}>Débito [F9]:</label>
+                      <input ref={debitoRef} type="number" placeholder="0.00" value={pagamentos.cartaoDebito} onChange={e => setPagamentos({...pagamentos, cartaoDebito: e.target.value})} style={{ width: '80px', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', textAlign: 'right', fontSize: '16px', fontWeight: 'bold' }} />
                     </div>
                   </div>
                 </div>
@@ -564,12 +628,12 @@ export default function Venda() {
                 </div>
 
                 <div style={{ display: 'flex', gap: '16px', marginTop: 'auto', flexDirection: isMobile ? 'column' : 'row' }}>
-                  <button type="button" disabled={processando} onClick={fecharModal} style={{ flex: 1, background: 'transparent', color: '#64748b', border: '2px solid #cbd5e1', padding: '18px', borderRadius: '16px', fontWeight: 'bold', cursor: 'pointer', fontSize: '16px' }}>
-                    Cancelar
+                  <button type="button" disabled={processando} onClick={fecharModal} style={{ flex: 1, background: 'transparent', color: '#64748b', border: '2px solid #cbd5e1', padding: '18px', borderRadius: '16px', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px' }}>
+                    Cancelar [F10]
                   </button>
                   <button id="btn-confirmar-venda" type="submit" onClick={confirmarEFinalizarVenda} disabled={processando || calcularTotalPago() < calcularTotalFinal() - 0.01} style={{ flex: 1.5, background: (processando || calcularTotalPago() < calcularTotalFinal() - 0.01) ? '#94a3b8' : '#10b981', color: 'white', border: 'none', padding: '18px', borderRadius: '16px', fontWeight: '900', cursor: (processando || calcularTotalPago() < calcularTotalFinal() - 0.01) ? 'not-allowed' : 'pointer', fontSize: '18px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', boxShadow: (processando || calcularTotalPago() < calcularTotalFinal() - 0.01) ? 'none' : '0 10px 15px -3px rgba(16, 185, 129, 0.4)' }}>
                     <CheckCircle size={24} /> 
-                    {processando ? 'Gerando...' : 'Confirmar [F11]'}
+                    {processando ? 'Gerando...' : 'Confirmar [F1]'}
                   </button>
                 </div>
               </div>
