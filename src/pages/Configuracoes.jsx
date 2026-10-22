@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
-import { ShieldCheck, Download, AlertTriangle, Store, User, Key, Save, Lock, X, Settings, EyeOff, Plus, Palette, Share2, Globe, Link as LinkIcon, FileText, UploadCloud, Unlock, RefreshCw, Upload } from 'lucide-react'
-import { collection, getDocs, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore'
+import { ShieldCheck, Download, AlertTriangle, Store, User, Key, Save, Lock, X, Settings, EyeOff, Plus, Palette, Share2, Globe, Link as LinkIcon, FileText, UploadCloud, Unlock, RefreshCw, Upload, Trash2, ShieldAlert, CheckCircle, ArrowRight } from 'lucide-react'
+import { collection, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
 
 export default function Configuracoes() {
@@ -30,18 +30,34 @@ export default function Configuracoes() {
 
   // Sistema do Cofre de Segurança
   const [statusCofre, setStatusCofre] = useState('carregando')
-  const [dadosSeguranca, setDadosSeguranca] = useState({ emailRecuperacao: '', senhaMaster: '', codigoAtual: '' })
+  const [dadosSeguranca, setDadosSeguranca] = useState({ 
+    emailRecuperacao: '', 
+    senhaProprietario: '', 
+    senhaGerente: '', 
+    senhaVendedor: '', 
+    codigoAtual: '' 
+  })
   
   // Inputs Temporários do Cofre
-  const [inputSenha, setInputSenha] = useState('')
+  const [inputSenhaAcesso, setInputSenhaAcesso] = useState('')
   const [inputEmail, setInputEmail] = useState('')
   const [inputCodigo, setInputCodigo] = useState('')
-  const [inputNovaSenha, setInputNovaSenha] = useState('')
+  
+  // Inputs de novas senhas
+  const [novaSenhaProprietario, setNovaSenhaProprietario] = useState('')
+  const [novaSenhaGerente, setNovaSenhaGerente] = useState('')
+  const [novaSenhaVendedor, setNovaSenhaVendedor] = useState('')
 
-  // Restauração do Sistema
-  const [restoreDestrancado, setRestoreDestrancado] = useState(false)
-  const [senhaRestore, setSenhaRestore] = useState('')
-
+  // Sistema de Protocolo de Segurança Crítica
+  const [modalCritico, setModalCritico] = useState({
+    aberto: false,
+    acao: '', 
+    step: 1,
+    codigoSegurancaGerado: '',
+    arquivoSelecionado: null
+  })
+  
+  const [inputsCriticos, setInputsCriticos] = useState({ senha: '', email: '', codigo: '' })
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
   useEffect(() => {
@@ -80,11 +96,17 @@ export default function Configuracoes() {
 
         const docRefSeg = doc(db, "configuracoes", "seguranca")
         const docSnapSeg = await getDoc(docRefSeg)
-        if (docSnapSeg.exists() && docSnapSeg.data().senhaMaster) {
-          setDadosSeguranca(docSnapSeg.data())
+        if (docSnapSeg.exists()) {
+          const segData = docSnapSeg.data()
+          setDadosSeguranca({
+            emailRecuperacao: segData.emailRecuperacao || '',
+            senhaProprietario: segData.senhaProprietario || segData.senhaMaster || '',
+            senhaGerente: segData.senhaGerente || '',
+            senhaVendedor: segData.senhaVendedor || '',
+            codigoAtual: segData.codigoAtual || ''
+          })
         }
         setStatusCofre('trancado')
-
       } catch (error) {
         console.error("Erro ao carregar do servidor:", error)
         setStatusCofre('trancado')
@@ -170,34 +192,42 @@ export default function Configuracoes() {
 
   const handleDesbloquearCofre = (e) => {
     e.preventDefault()
-    const senhaRequerida = dadosSeguranca.senhaMaster ? dadosSeguranca.senhaMaster : '0000'
+    const senhaRequerida = dadosSeguranca.senhaProprietario ? dadosSeguranca.senhaProprietario : '0000'
     
-    if (inputSenha === senhaRequerida) {
-      if (!dadosSeguranca.senhaMaster) {
+    if (inputSenhaAcesso === senhaRequerida) {
+      if (!dadosSeguranca.senhaProprietario) {
         setStatusCofre('primeiro_acesso')
       } else {
         setStatusCofre('desbloqueado')
       }
-      setInputSenha('')
-      mostrarAlerta('sucesso', 'Acesso liberado.')
+      setInputSenhaAcesso('')
+      mostrarAlerta('sucesso', 'Acesso Total liberado.')
     } else {
-      mostrarAlerta('erro', 'Senha incorreta!')
-      setInputSenha('')
+      mostrarAlerta('erro', 'Senha de Proprietário incorreta!')
+      setInputSenhaAcesso('')
     }
   }
 
-  const handleConfigurarPrimeiroCofre = async (e) => {
+  const handleConfigurarSenhasCofre = async (e) => {
     e.preventDefault()
-    if(!inputEmail || !inputNovaSenha) return mostrarAlerta('erro', 'Preencha e-mail e senha.')
+    if(!inputEmail || !novaSenhaProprietario) return mostrarAlerta('erro', 'Preencha o e-mail e a senha do proprietário obrigatoriamente.')
     
-    setStatus({ tipo: 'info', msg: 'Registrando credenciais...' })
+    setStatus({ tipo: 'info', msg: 'Registrando credenciais de acesso...' })
     try {
-      const novosDados = { emailRecuperacao: inputEmail, senhaMaster: inputNovaSenha, codigoAtual: '' }
+      const novosDados = { 
+        emailRecuperacao: inputEmail, 
+        senhaProprietario: novaSenhaProprietario, 
+        senhaGerente: novaSenhaGerente,
+        senhaVendedor: novaSenhaVendedor,
+        codigoAtual: '' 
+      }
       await setDoc(doc(db, "configuracoes", "seguranca"), novosDados)
       setDadosSeguranca(novosDados)
       setStatusCofre('desbloqueado')
       setInputEmail('')
-      setInputNovaSenha('')
+      setNovaSenhaProprietario('')
+      setNovaSenhaGerente('')
+      setNovaSenhaVendedor('')
       mostrarAlerta('sucesso', 'Credenciais cadastradas com sucesso!')
     } catch (error) {
       mostrarAlerta('erro', 'Erro ao configurar segurança.')
@@ -232,7 +262,7 @@ export default function Configuracoes() {
     if (inputCodigo === dadosSeguranca.codigoAtual) {
       setStatusCofre('redefinir_senha')
       setInputCodigo('')
-      mostrarAlerta('sucesso', 'Código validado! Crie a nova senha.')
+      mostrarAlerta('sucesso', 'Código validado! Crie a nova senha de Proprietário.')
     } else {
       mostrarAlerta('erro', 'Código inválido ou expirado.')
     }
@@ -241,26 +271,13 @@ export default function Configuracoes() {
   const handleSalvarNovaSenhaRedefinida = async (e) => {
     e.preventDefault()
     try {
-      await updateDoc(doc(db, "configuracoes", "seguranca"), { senhaMaster: inputNovaSenha, codigoAtual: '' })
-      setDadosSeguranca({ ...dadosSeguranca, senhaMaster: inputNovaSenha, codigoAtual: '' })
+      await updateDoc(doc(db, "configuracoes", "seguranca"), { senhaProprietario: novaSenhaProprietario, codigoAtual: '' })
+      setDadosSeguranca({ ...dadosSeguranca, senhaProprietario: novaSenhaProprietario, codigoAtual: '' })
       setStatusCofre('desbloqueado')
-      setInputNovaSenha('')
-      mostrarAlerta('sucesso', 'Nova senha salva com sucesso!')
+      setNovaSenhaProprietario('')
+      mostrarAlerta('sucesso', 'Nova senha do Proprietário salva com sucesso!')
     } catch (error) {
       mostrarAlerta('erro', 'Erro ao salvar nova senha.')
-    }
-  }
-
-  const handleDesbloquearRestore = (e) => {
-    e.preventDefault()
-    const senhaRequerida = dadosSeguranca.senhaMaster ? dadosSeguranca.senhaMaster : '0000'
-    if (senhaRestore === senhaRequerida) {
-      setRestoreDestrancado(true)
-      setSenhaRestore('')
-      mostrarAlerta('sucesso', 'Restauração de sistema desbloqueada.')
-    } else {
-      mostrarAlerta('erro', 'Senha incorreta para restauração!')
-      setSenhaRestore('')
     }
   }
 
@@ -306,54 +323,191 @@ export default function Configuracoes() {
     }
   }
 
-  const processarRestoreJSON = async (e) => {
-    const file = e.target.files[0]
-    if (!file) return
+  // ========================== PROTOCOLO DE SEGURANÇA CRÍTICA ==========================
 
-    setStatus({ tipo: 'info', msg: 'Iniciando restauração de dados...' })
-    const reader = new FileReader()
-    reader.onload = async (event) => {
-      try {
-        const dados = JSON.parse(event.target.result)
-        
-        if (dados.storefy_produtos && Array.isArray(dados.storefy_produtos)) {
-          for (let prod of dados.storefy_produtos) {
-            const docId = prod.id || Math.random().toString(36).substring(2)
-            const cleanProd = { ...prod }
-            delete cleanProd.id
-            await setDoc(doc(db, "produtos", docId), cleanProd)
-          }
-        }
-        
-        if (dados.storefy_clientes && Array.isArray(dados.storefy_clientes)) {
-          for (let cli of dados.storefy_clientes) {
-            const docId = cli.id || Math.random().toString(36).substring(2)
-            const cleanCli = { ...cli }
-            delete cleanCli.id
-            await setDoc(doc(db, "clientes", docId), cleanCli)
-          }
-        }
+  const abrirModalCritico = (acao, arquivo = null) => {
+    const randomCode = Math.random().toString(36).substring(2, 10).toUpperCase() + Math.random().toString(36).substring(2, 10).toUpperCase()
+    
+    setModalCritico({
+      aberto: true,
+      acao: acao,
+      step: 1,
+      codigoSegurancaGerado: randomCode.substring(0, 16), // Max 16-20 chars
+      arquivoSelecionado: arquivo
+    })
+    setInputsCriticos({ senha: '', email: '', codigo: '' })
+  }
 
-        if (dados.storefy_dados_loja) {
-          await setDoc(doc(db, "configuracoes", "loja"), dados.storefy_dados_loja)
-        }
+  const fecharModalCritico = () => {
+    setModalCritico({ aberto: false, acao: '', step: 1, codigoSegurancaGerado: '', arquivoSelecionado: null })
+    setInputsCriticos({ senha: '', email: '', codigo: '' })
+  }
 
-        setRestoreDestrancado(false)
-        mostrarAlerta('sucesso', 'Sistema restaurado com sucesso! Recarregue a página.')
-      } catch (error) {
-        console.error(error)
-        mostrarAlerta('erro', 'Erro na restauração. Verifique o arquivo JSON.')
+  const avancarPassoCritico = (e) => {
+    e.preventDefault()
+    
+    if (modalCritico.step === 1) {
+      setModalCritico({ ...modalCritico, step: 2 })
+    } 
+    else if (modalCritico.step === 2) {
+      if (inputsCriticos.senha === dadosSeguranca.senhaProprietario) {
+        setModalCritico({ ...modalCritico, step: 3 })
+      } else {
+        alert("Senha do Proprietário incorreta. Acesso Negado.")
+        fecharModalCritico()
+      }
+    } 
+    else if (modalCritico.step === 3) {
+      if (inputsCriticos.email === dadosSeguranca.emailRecuperacao) {
+        setModalCritico({ ...modalCritico, step: 4 })
+      } else {
+        alert("E-mail não confere com o registrado no Cofre. Acesso Negado.")
+        fecharModalCritico()
+      }
+    } 
+    else if (modalCritico.step === 4) {
+      if (inputsCriticos.codigo === modalCritico.codigoSegurancaGerado) {
+        executarAcaoCriticaFinal()
+      } else {
+        alert("Código de segurança inválido. Ação abortada.")
+        fecharModalCritico()
       }
     }
-    reader.readAsText(file)
   }
+
+  const executarAcaoCriticaFinal = async () => {
+    setStatus({ tipo: 'info', msg: 'Processando ação crítica, aguarde não feche a janela...' })
+    
+    try {
+      if (modalCritico.acao === 'limpar_historico') {
+        const querySnapshot = await getDocs(collection(db, "historico"))
+        const promessas = querySnapshot.docs.map(d => deleteDoc(doc(db, "historico", d.id)))
+        await Promise.all(promessas)
+        mostrarAlerta('sucesso', 'Histórico de vendas apagado permanentemente com sucesso!')
+      } 
+      
+      else if (modalCritico.acao === 'upar_json') {
+        const reader = new FileReader()
+        reader.onload = async (event) => {
+          try {
+            const dados = JSON.parse(event.target.result)
+            if (dados.storefy_produtos) {
+              for (let prod of dados.storefy_produtos) {
+                const docId = prod.id || Math.random().toString(36).substring(2)
+                const cleanProd = { ...prod }
+                delete cleanProd.id
+                await setDoc(doc(db, "produtos", docId), cleanProd, { merge: true })
+              }
+            }
+            if (dados.storefy_clientes) {
+              for (let cli of dados.storefy_clientes) {
+                const docId = cli.id || Math.random().toString(36).substring(2)
+                const cleanCli = { ...cli }
+                delete cleanCli.id
+                await setDoc(doc(db, "clientes", docId), cleanCli, { merge: true })
+              }
+            }
+            mostrarAlerta('sucesso', 'Arquivo JSON mesclado com sucesso sem apagar dados atuais!')
+          } catch(e) {
+            mostrarAlerta('erro', 'Erro ao ler arquivo JSON para mesclagem.')
+          }
+        }
+        reader.readAsText(modalCritico.arquivoSelecionado)
+      } 
+      
+      else if (modalCritico.acao === 'restaurar_sistema') {
+        const reader = new FileReader()
+        reader.onload = async (event) => {
+          try {
+            const dados = JSON.parse(event.target.result)
+            
+            // 1. Limpeza total antes de restaurar
+            const colecoes = ["produtos", "historico", "clientes"]
+            for (let c of colecoes) {
+              const snapshot = await getDocs(collection(db, c))
+              const promessasDelete = snapshot.docs.map(d => deleteDoc(doc(db, c, d.id)))
+              await Promise.all(promessasDelete)
+            }
+
+            // 2. Inserção dos novos dados puros
+            if (dados.storefy_produtos) {
+              for (let prod of dados.storefy_produtos) {
+                const docId = prod.id || Math.random().toString(36).substring(2)
+                const cleanProd = { ...prod }
+                delete cleanProd.id
+                await setDoc(doc(db, "produtos", docId), cleanProd)
+              }
+            }
+            if (dados.storefy_clientes) {
+              for (let cli of dados.storefy_clientes) {
+                const docId = cli.id || Math.random().toString(36).substring(2)
+                const cleanCli = { ...cli }
+                delete cleanCli.id
+                await setDoc(doc(db, "clientes", docId), cleanCli)
+              }
+            }
+            if (dados.storefy_historico) {
+              for (let hist of dados.storefy_historico) {
+                const docId = hist.id || Math.random().toString(36).substring(2)
+                const cleanHist = { ...hist }
+                delete cleanHist.id
+                await setDoc(doc(db, "historico", docId), cleanHist)
+              }
+            }
+            if (dados.storefy_dados_loja) {
+              await setDoc(doc(db, "configuracoes", "loja"), dados.storefy_dados_loja)
+            }
+
+            mostrarAlerta('sucesso', 'Restauração concluída! O sistema foi formatado e recuperado do arquivo.')
+          } catch(e) {
+            mostrarAlerta('erro', 'Erro ao formatar e restaurar o sistema via JSON.')
+          }
+        }
+        reader.readAsText(modalCritico.arquivoSelecionado)
+      }
+    } catch (error) {
+      console.error(error)
+      mostrarAlerta('erro', 'Ocorreu um erro ao processar a ação crítica.')
+    } finally {
+      fecharModalCritico()
+    }
+  }
+
+  const getTextoAvisoCritico = (acao) => {
+    if (acao === 'limpar_historico') return "Você está prestes a APAGAR TODO O HISTÓRICO DE VENDAS. Esta ação excluirá permanentemente todos os registros de movimentação do caixa e não poderá ser desfeita de forma alguma."
+    if (acao === 'upar_json') return "Você está prestes a MESCLAR UM ARQUIVO JSON aos dados atuais. Isso adicionará e atualizará informações no seu banco de dados atual, podendo sobrepor itens que tenham códigos ou nomes idênticos."
+    if (acao === 'restaurar_sistema') return "Você está prestes a RESTAURAR O SISTEMA COMPLETO. ATENÇÃO MÁXIMA: Todos os seus produtos, clientes e histórico de vendas ATUAIS SERÃO APAGADOS PERMANENTEMENTE e substituídos exclusivamente pelos dados do arquivo JSON enviado."
+    return ""
+  }
+
+  const getTituloCritico = (acao) => {
+    if (acao === 'limpar_historico') return "Limpar Histórico de Vendas"
+    if (acao === 'upar_json') return "Mesclar Dados (Upar JSON)"
+    if (acao === 'restaurar_sistema') return "Restauração Extrema do Sistema"
+    return "Ação de Segurança"
+  }
+
+  // Tratadores de input file
+  const handleFileUparJson = (e) => {
+    if (e.target.files[0]) {
+      abrirModalCritico('upar_json', e.target.files[0])
+      e.target.value = '' 
+    }
+  }
+
+  const handleFileRestaurar = (e) => {
+    if (e.target.files[0]) {
+      abrirModalCritico('restaurar_sistema', e.target.files[0])
+      e.target.value = '' 
+    }
+  }
+
 
   const SidebarBtn = ({ id, icon, texto }) => (
     <button 
       onClick={() => {
         setAbaAtiva(id)
         if(id !== 'seguranca' && statusCofre === 'desbloqueado') setStatusCofre('trancado')
-        if(id !== 'manutencao') setRestoreDestrancado(false)
       }} 
       style={{ 
         display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '14px', 
@@ -368,7 +522,7 @@ export default function Configuracoes() {
   )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '1000px', margin: '0 auto', minHeight: '100vh', paddingBottom: '40px', boxSizing: 'border-box', width: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '1000px', margin: '0 auto', minHeight: '100vh', paddingBottom: '40px', boxSizing: 'border-box', width: '100%', position: 'relative' }}>
       
       <header style={{ marginBottom: '10px' }}>
         <h1 style={{ fontSize: isMobile ? '24px' : '30px', color: '#1e1b4b', fontWeight: 'bold', margin: 0 }}>Configurações do Sistema</h1>
@@ -590,13 +744,13 @@ export default function Configuracoes() {
                   <div style={{ background: '#fee2e2', padding: '16px', borderRadius: '50%', color: '#ef4444' }}><Lock size={40} /></div>
                   <h3 style={{ fontSize: '18px', color: '#1e1b4b', margin: 0 }}>Cofre Trancado</h3>
                   <p style={{ color: '#64748b', fontSize: '14px', maxWidth: '300px', margin: 0 }}>
-                    {!dadosSeguranca.senhaMaster ? 'Use a senha padrão 0000 para entrar no sistema pela primeira vez.' : 'Digite sua Senha Master para alterar os dados.'}
+                    {!dadosSeguranca.senhaProprietario ? 'Use a senha padrão 0000 para entrar no sistema pela primeira vez e cadastrar suas senhas hierárquicas.' : 'Digite a Senha do Proprietário para liberar o Cofre de Segurança.'}
                   </p>
                   
                   <form onSubmit={handleDesbloquearCofre} style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', maxWidth: '300px', marginTop: '12px' }}>
-                    <input type="password" value={inputSenha} onChange={e => setInputSenha(e.target.value)} placeholder="Digite a Senha" required style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', textAlign: 'center' }} />
+                    <input type="password" value={inputSenhaAcesso} onChange={e => setInputSenhaAcesso(e.target.value)} placeholder="Senha do Proprietário" required style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', textAlign: 'center' }} />
                     <button type="submit" style={{ background: '#1e1b4b', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><Unlock size={16} /> Abrir Cofre</button>
-                    {dadosSeguranca.senhaMaster && (
+                    {dadosSeguranca.senhaProprietario && (
                       <button type="button" onClick={() => setStatusCofre('pedir_email')} style={{ background: 'transparent', color: '#2563eb', border: 'none', fontSize: '13px', cursor: 'pointer', marginTop: '8px', fontWeight: 'bold' }}>Esqueci minha senha</button>
                     )}
                   </form>
@@ -604,15 +758,32 @@ export default function Configuracoes() {
               )}
 
               {statusCofre === 'primeiro_acesso' && (
-                <div style={{ background: '#f8fafc', padding: isMobile ? '24px' : '40px', borderRadius: '16px', border: '1px dashed #cbd5e1', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+                <div style={{ background: '#f8fafc', padding: isMobile ? '24px' : '32px', borderRadius: '16px', border: '1px dashed #cbd5e1', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
                   <div style={{ background: '#dbeafe', padding: '16px', borderRadius: '50%', color: '#2563eb' }}><ShieldCheck size={40} /></div>
-                  <h3 style={{ fontSize: '18px', color: '#1e1b4b', margin: 0 }}>Defina suas Credenciais</h3>
-                  <p style={{ color: '#64748b', fontSize: '14px', maxWidth: '400px', margin: 0 }}>Cadastre um E-mail de Recuperação e crie a nova Senha Master definitiva para não usar mais a senha padrão 0000.</p>
+                  <h3 style={{ fontSize: '18px', color: '#1e1b4b', margin: 0 }}>Defina suas Credenciais e Senhas</h3>
+                  <p style={{ color: '#64748b', fontSize: '14px', maxWidth: '500px', margin: 0 }}>
+                    Cadastre um E-mail de Recuperação e crie as 3 senhas oficiais do sistema. Apenas a senha do Proprietário desbloqueia este cofre e ações críticas.
+                  </p>
                   
-                  <form onSubmit={handleConfigurarPrimeiroCofre} style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', maxWidth: '300px', marginTop: '12px' }}>
-                    <input type="email" value={inputEmail} onChange={e => setInputEmail(e.target.value)} placeholder="E-mail de Recuperação" required style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} />
-                    <input type="text" value={inputNovaSenha} onChange={e => setInputNovaSenha(e.target.value)} placeholder="Criar nova Senha Master" required style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} />
-                    <button type="submit" style={{ background: '#2563eb', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Salvar e Atualizar</button>
+                  <form onSubmit={handleConfigurarSenhasCofre} style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', maxWidth: '400px', marginTop: '12px' }}>
+                    <div style={{ textAlign: 'left' }}>
+                      <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#64748b' }}>E-mail Mestre de Recuperação *</label>
+                      <input type="email" value={inputEmail} onChange={e => setInputEmail(e.target.value)} required style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', boxSizing: 'border-box' }} />
+                    </div>
+                    <div style={{ textAlign: 'left' }}>
+                      <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#1e1b4b' }}>1. Senha do Proprietário (Acesso Total) *</label>
+                      <input type="text" value={novaSenhaProprietario} onChange={e => setNovaSenhaProprietario(e.target.value)} required style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '2px solid #3b82f6', outline: 'none', fontSize: '14px', boxSizing: 'border-box' }} />
+                    </div>
+                    <div style={{ textAlign: 'left' }}>
+                      <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#1e1b4b' }}>2. Senha do Gerente (Opcional)</label>
+                      <input type="text" value={novaSenhaGerente} onChange={e => setNovaSenhaGerente(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', boxSizing: 'border-box' }} />
+                    </div>
+                    <div style={{ textAlign: 'left' }}>
+                      <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#1e1b4b' }}>3. Senha do Vendedor Contratado (Opcional)</label>
+                      <input type="text" value={novaSenhaVendedor} onChange={e => setNovaSenhaVendedor(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', boxSizing: 'border-box' }} />
+                    </div>
+                    
+                    <button type="submit" style={{ background: '#2563eb', color: 'white', border: 'none', padding: '14px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', marginTop: '8px' }}>Salvar Configurações de Segurança</button>
                   </form>
                 </div>
               )}
@@ -620,7 +791,7 @@ export default function Configuracoes() {
               {statusCofre === 'pedir_email' && (
                 <div style={{ background: '#f8fafc', padding: '30px', borderRadius: '16px', border: '1px solid #e2e8f0', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
                   <h3 style={{ fontSize: '18px', color: '#1e1b4b', margin: 0 }}>Recuperação de Senha</h3>
-                  <p style={{ color: '#64748b', fontSize: '14px', maxWidth: '300px', margin: 0 }}>Digite o e-mail cadastrado no sistema para receber o código de 6 dígitos.</p>
+                  <p style={{ color: '#64748b', fontSize: '14px', maxWidth: '300px', margin: 0 }}>Digite o e-mail cadastrado no sistema para receber o código de recuperação.</p>
                   <form onSubmit={handleIniciarRecuperacao} style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', maxWidth: '300px' }}>
                     <input type="email" value={inputEmail} onChange={e => setInputEmail(e.target.value)} placeholder="Seu e-mail" required style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} />
                     <button type="submit" style={{ background: '#2563eb', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Enviar Código</button>
@@ -643,10 +814,10 @@ export default function Configuracoes() {
 
               {statusCofre === 'redefinir_senha' && (
                 <div style={{ background: '#f8fafc', padding: '30px', borderRadius: '16px', border: '1px solid #e2e8f0', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
-                  <h3 style={{ fontSize: '18px', color: '#1e1b4b', margin: 0 }}>Criar Nova Senha Master</h3>
+                  <h3 style={{ fontSize: '18px', color: '#1e1b4b', margin: 0 }}>Criar Nova Senha do Proprietário</h3>
                   <p style={{ color: '#64748b', fontSize: '14px', maxWidth: '300px', margin: 0 }}>Digite a nova senha que substituirá a esquecida.</p>
                   <form onSubmit={handleSalvarNovaSenhaRedefinida} style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', maxWidth: '300px' }}>
-                    <input type="text" value={inputNovaSenha} onChange={e => setInputNovaSenha(e.target.value)} placeholder="Nova senha" required style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} />
+                    <input type="text" value={novaSenhaProprietario} onChange={e => setNovaSenhaProprietario(e.target.value)} placeholder="Nova senha" required style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} />
                     <button type="submit" style={{ background: '#2563eb', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Salvar Nova Senha</button>
                   </form>
                 </div>
@@ -655,18 +826,28 @@ export default function Configuracoes() {
               {statusCofre === 'desbloqueado' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#d1fae5', padding: '12px 16px', borderRadius: '12px', border: '1px solid #34d399' }}>
-                    <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#065f46', display: 'flex', alignItems: 'center', gap: '8px' }}><ShieldCheck size={18} /> Cofre Aberto</span>
+                    <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#065f46', display: 'flex', alignItems: 'center', gap: '8px' }}><ShieldCheck size={18} /> Cofre Aberto (Proprietário)</span>
                     <button onClick={() => setStatusCofre('trancado')} style={{ background: 'white', border: '1px solid #a7f3d0', color: '#065f46', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>Trancar</button>
                   </div>
                   
-                  <form onSubmit={handleConfigurarPrimeiroCofre} style={{ background: '#f8fafc', padding: '24px', borderRadius: '16px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <form onSubmit={handleConfigurarSenhasCofre} style={{ background: '#f8fafc', padding: '24px', borderRadius: '16px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#1e1b4b' }}>E-mail de Recuperação</label>
-                      <input type="email" value={inputEmail || dadosSeguranca.emailRecuperacao} onChange={e => setInputEmail(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px' }} />
+                      <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#1e1b4b' }}>E-mail de Recuperação Mestre</label>
+                      <input type="email" value={inputEmail || dadosSeguranca.emailRecuperacao} onChange={e => setInputEmail(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px' }} />
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#1e1b4b' }}>Senha Master Atual</label>
-                      <input type="text" value={inputNovaSenha || dadosSeguranca.senhaMaster} onChange={e => setInputNovaSenha(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px', color: '#b91c1c', fontWeight: 'bold' }} />
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '16px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#b91c1c' }}>1. Senha Proprietário</label>
+                        <input type="text" value={novaSenhaProprietario || dadosSeguranca.senhaProprietario} onChange={e => setNovaSenhaProprietario(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '2px solid #fca5a5', outline: 'none', fontSize: '14px', color: '#b91c1c', fontWeight: 'bold' }} />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#1e1b4b' }}>2. Senha Gerente</label>
+                        <input type="text" value={novaSenhaGerente || dadosSeguranca.senhaGerente} onChange={e => setNovaSenhaGerente(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px' }} />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#1e1b4b' }}>3. Senha Vendedor</label>
+                        <input type="text" value={novaSenhaVendedor || dadosSeguranca.senhaVendedor} onChange={e => setNovaSenhaVendedor(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px' }} />
+                      </div>
                     </div>
                     <button type="submit" style={{ background: '#2563eb', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><RefreshCw size={16} /> Atualizar Credenciais</button>
                   </form>
@@ -680,36 +861,62 @@ export default function Configuracoes() {
               <div>
                 <h2 style={{ fontSize: '20px', color: '#1e1b4b', fontWeight: 'bold', margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '8px' }}><FileText size={22} color="#2563eb" /> Backups e Restauração</h2>
                 
-                <div style={{ border: '1px dashed #cbd5e1', background: '#f8fafc', padding: '24px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'flex-start', marginBottom: '20px' }}>
-                  <h3 style={{ fontSize: '16px', color: '#1e1b4b', fontWeight: 'bold', margin: 0 }}>Exportar Dados da Loja (Backup)</h3>
+                {/* EXPORTAR DADOS */}
+                <div style={{ border: '1px solid #e2e8f0', background: '#f8fafc', padding: '24px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'flex-start', marginBottom: '20px' }}>
+                  <h3 style={{ fontSize: '16px', color: '#1e1b4b', fontWeight: 'bold', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}><Download size={18} color="#2563eb"/> Exportar Dados (Backup Seguro)</h3>
                   <p style={{ fontSize: '14px', color: '#64748b', margin: 0, lineHeight: '1.5', maxWidth: '600px' }}>
-                    Faça o download de um arquivo JSON contendo todos os dados do sistema. Guarde com segurança.
+                    Faça o download de um arquivo JSON contendo todos os dados e cadastros do sistema. Guarde com segurança.
                   </p>
-                  <button onClick={exportarBackup} style={{ background: '#2563eb', color: 'white', border: 'none', padding: '12px 24px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', marginTop: '8px' }}>
-                    <Download size={18} /> Baixar Arquivo JSON
+                  <button onClick={exportarBackup} style={{ background: '#2563eb', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', marginTop: '4px' }}>
+                    Baixar Arquivo JSON
                   </button>
                 </div>
 
-                <div style={{ border: '1px solid #e2e8f0', background: '#ffffff', padding: '24px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <h3 style={{ fontSize: '16px', color: '#1e1b4b', fontWeight: 'bold', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <UploadCloud size={20} color="#ef4444" /> Restaurar Sistema
-                  </h3>
-                  <p style={{ fontSize: '14px', color: '#64748b', margin: 0, lineHeight: '1.5', maxWidth: '600px' }}>
-                    Esta ação sobrescreve os dados atuais do banco utilizando um arquivo de backup anterior.
-                  </p>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '20px' }}>
                   
-                  {!restoreDestrancado ? (
-                    <form onSubmit={handleDesbloquearRestore} style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
-                      <input type="password" value={senhaRestore} onChange={e => setSenhaRestore(e.target.value)} placeholder="Senha Master ou 0000" required style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px' }} />
-                      <button type="submit" style={{ background: '#1e1b4b', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Liberar Envio</button>
-                    </form>
-                  ) : (
-                    <div style={{ width: '100%', padding: '20px', borderRadius: '8px', border: '2px dashed #ef4444', background: '#fef2f2', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative', cursor: 'pointer', marginTop: '8px' }}>
-                      <Upload size={30} color="#ef4444" style={{ marginBottom: '8px' }} />
-                      <span style={{ fontSize: '14px', color: '#b91c1c', fontWeight: '600' }}>Toque para anexar o arquivo .json</span>
-                      <input type="file" accept=".json" onChange={processarRestoreJSON} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }} />
+                  {/* UPAR JSON / MESCLAR */}
+                  <div style={{ border: '1px solid #e2e8f0', background: '#ffffff', padding: '24px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <h3 style={{ fontSize: '16px', color: '#1e1b4b', fontWeight: 'bold', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <UploadCloud size={18} color="#f59e0b" /> Mesclar Arquivo JSON
+                    </h3>
+                    <p style={{ fontSize: '13px', color: '#64748b', margin: 0, lineHeight: '1.5' }}>
+                      Adiciona e atualiza informações no sistema a partir de um backup. <strong>Os dados atuais não serão apagados.</strong>
+                    </p>
+                    <div style={{ width: '100%', padding: '16px', borderRadius: '8px', border: '2px dashed #fcd34d', background: '#fffbeb', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative', cursor: 'pointer', marginTop: 'auto' }}>
+                      <UploadCloud size={24} color="#f59e0b" style={{ marginBottom: '8px' }} />
+                      <span style={{ fontSize: '13px', color: '#b45309', fontWeight: '600' }}>Toque para mesclar .json</span>
+                      <input type="file" accept=".json" onChange={handleFileUparJson} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }} />
                     </div>
-                  )}
+                  </div>
+
+                  {/* RESTAURAR SISTEMA */}
+                  <div style={{ border: '1px solid #fecaca', background: '#fff5f5', padding: '24px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <h3 style={{ fontSize: '16px', color: '#991b1b', fontWeight: 'bold', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Upload size={18} color="#ef4444" /> Restaurar Sistema
+                    </h3>
+                    <p style={{ fontSize: '13px', color: '#991b1b', margin: 0, lineHeight: '1.5', opacity: 0.8 }}>
+                      <strong>ALERTA DE FORMATAÇÃO:</strong> Isso apagará todos os dados atuais e forçará a substituição pelo arquivo.
+                    </p>
+                    <div style={{ width: '100%', padding: '16px', borderRadius: '8px', border: '2px dashed #ef4444', background: '#fef2f2', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative', cursor: 'pointer', marginTop: 'auto' }}>
+                      <Upload size={24} color="#ef4444" style={{ marginBottom: '8px' }} />
+                      <span style={{ fontSize: '13px', color: '#b91c1c', fontWeight: '600' }}>Toque para restaurar .json</span>
+                      <input type="file" accept=".json" onChange={handleFileRestaurar} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }} />
+                    </div>
+                  </div>
+
+                  {/* LIMPAR HISTÓRICO DE VENDAS */}
+                  <div style={{ gridColumn: '1 / -1', border: '1px solid #fecaca', background: '#fff5f5', padding: '24px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'flex-start', marginTop: '10px' }}>
+                    <h3 style={{ fontSize: '16px', color: '#991b1b', fontWeight: 'bold', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Trash2 size={18} color="#ef4444" /> Limpar Todo o Histórico de Vendas
+                    </h3>
+                    <p style={{ fontSize: '14px', color: '#991b1b', margin: 0, lineHeight: '1.5', maxWidth: '700px', opacity: 0.9 }}>
+                      Esta ação apaga os registros do caixa. Ações de segurança máxima exigirão a senha do proprietário, confirmação de e-mail e um código aleatório.
+                    </p>
+                    <button onClick={() => abrirModalCritico('limpar_historico')} style={{ background: '#ef4444', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', marginTop: '4px' }}>
+                      <Trash2 size={16} /> Apagar Histórico Agora
+                    </button>
+                  </div>
+
                 </div>
               </div>
             </div>
@@ -717,6 +924,79 @@ export default function Configuracoes() {
 
         </div>
       </div>
+
+      {/* ===================== MODAL DE SEGURANÇA CRÍTICA ===================== */}
+      {modalCritico.aberto && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.9)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
+          <div style={{ background: 'white', borderRadius: '24px', width: '100%', maxWidth: '500px', padding: isMobile ? '24px' : '40px', boxSizing: 'border-box', position: 'relative', overflow: 'hidden' }}>
+            
+            <button onClick={fecharModalCritico} style={{ position: 'absolute', top: '20px', right: '20px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+              <X size={16} />
+            </button>
+
+            {modalCritico.step === 1 && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '20px' }}>
+                <div style={{ background: '#fee2e2', padding: '20px', borderRadius: '50%', color: '#ef4444' }}><ShieldAlert size={48} /></div>
+                <h2 style={{ fontSize: '22px', color: '#991b1b', margin: 0, fontWeight: '900', textTransform: 'uppercase' }}>{getTituloCritico(modalCritico.acao)}</h2>
+                <p style={{ color: '#1e1b4b', fontSize: '16px', lineHeight: '1.6', fontWeight: '600' }}>
+                  {getTextoAvisoCritico(modalCritico.acao)}
+                </p>
+                <button onClick={avancarPassoCritico} style={{ background: '#ef4444', color: 'white', border: 'none', padding: '16px', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', fontSize: '15px' }}>
+                  Estou Ciente, Continuar <ArrowRight size={18} />
+                </button>
+              </div>
+            )}
+
+            {modalCritico.step === 2 && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '20px' }}>
+                <div style={{ background: '#e0e7ff', padding: '20px', borderRadius: '50%', color: '#4f46e5' }}><Lock size={48} /></div>
+                <h2 style={{ fontSize: '22px', color: '#1e1b4b', margin: 0, fontWeight: '900' }}>Etapa 1/3: Senha do Proprietário</h2>
+                <p style={{ color: '#64748b', fontSize: '15px', margin: 0 }}>Esta é uma ação restrita. Confirme a senha do proprietário cadastrada no cofre de segurança.</p>
+                <form onSubmit={avancarPassoCritico} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <input type="password" value={inputsCriticos.senha} onChange={e => setInputsCriticos({...inputsCriticos, senha: e.target.value})} placeholder="Senha do Proprietário" required style={{ width: '100%', padding: '16px', borderRadius: '12px', border: '2px solid #cbd5e1', outline: 'none', fontSize: '18px', textAlign: 'center', boxSizing: 'border-box' }} />
+                  <button type="submit" style={{ background: '#4f46e5', color: 'white', border: 'none', padding: '16px', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', width: '100%', fontSize: '15px' }}>Avançar</button>
+                </form>
+              </div>
+            )}
+
+            {modalCritico.step === 3 && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '20px' }}>
+                <div style={{ background: '#e0e7ff', padding: '20px', borderRadius: '50%', color: '#4f46e5' }}><User size={48} /></div>
+                <h2 style={{ fontSize: '22px', color: '#1e1b4b', margin: 0, fontWeight: '900' }}>Etapa 2/3: Confirmação de E-mail</h2>
+                <p style={{ color: '#64748b', fontSize: '15px', margin: 0 }}>Para evitar erros, digite o e-mail de recuperação exatamente como cadastrado no sistema.</p>
+                <form onSubmit={avancarPassoCritico} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <input type="email" value={inputsCriticos.email} onChange={e => setInputsCriticos({...inputsCriticos, email: e.target.value})} placeholder="E-mail cadastrado" required style={{ width: '100%', padding: '16px', borderRadius: '12px', border: '2px solid #cbd5e1', outline: 'none', fontSize: '16px', textAlign: 'center', boxSizing: 'border-box' }} />
+                  <button type="submit" style={{ background: '#4f46e5', color: 'white', border: 'none', padding: '16px', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', width: '100%', fontSize: '15px' }}>Avançar</button>
+                </form>
+              </div>
+            )}
+
+            {modalCritico.step === 4 && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '20px' }}>
+                <div style={{ background: '#fef3c7', padding: '20px', borderRadius: '50%', color: '#d97706' }}><ShieldCheck size={48} /></div>
+                <h2 style={{ fontSize: '22px', color: '#1e1b4b', margin: 0, fontWeight: '900' }}>Etapa 3/3: Assinatura Digital</h2>
+                <p style={{ color: '#64748b', fontSize: '15px', margin: 0 }}>Digite o código de verificação abaixo para confirmar a execução irreversível da tarefa.</p>
+                
+                <div style={{ background: '#f8fafc', border: '1px dashed #94a3b8', padding: '16px', borderRadius: '12px', width: '100%', boxSizing: 'border-box' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px' }}>Código de Autorização</span>
+                  <div style={{ fontSize: '24px', fontWeight: '900', color: '#1e1b4b', marginTop: '8px', letterSpacing: '3px', wordBreak: 'break-all' }}>
+                    {modalCritico.codigoSegurancaGerado}
+                  </div>
+                </div>
+
+                <form onSubmit={avancarPassoCritico} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <input type="text" value={inputsCriticos.codigo} onChange={e => setInputsCriticos({...inputsCriticos, codigo: e.target.value})} placeholder="Digite o código acima" required style={{ width: '100%', padding: '16px', borderRadius: '12px', border: '2px solid #cbd5e1', outline: 'none', fontSize: '16px', textAlign: 'center', fontWeight: 'bold', boxSizing: 'border-box' }} />
+                  <button type="submit" style={{ background: '#ef4444', color: 'white', border: 'none', padding: '16px', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', width: '100%', fontSize: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                    <CheckCircle size={18}/> EXECUTAR AÇÃO DEFINITIVA
+                  </button>
+                </form>
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }

@@ -21,6 +21,9 @@ export default function Venda() {
   const [descontoTipo, setDescontoTipo] = useState('R$')
   const [descontoValor, setDescontoValor] = useState('')
   const [senhaDesconto, setSenhaDesconto] = useState('')
+  
+  // Senhas autorizadas para aplicar desconto
+  const [senhasAutorizadas, setSenhasAutorizadas] = useState({ proprietario: '', gerente: '' })
 
   const [modalConfirmacao, setModalConfirmacao] = useState(false)
   const [vendedorNome, setVendedorNome] = useState('')
@@ -76,6 +79,7 @@ export default function Venda() {
         const listaP = queryProdutos.docs.map(d => ({ id: d.id, ...d.data() }))
         setProdutos(listaP)
 
+        // Carrega Vendedores
         const docRefVendedores = doc(db, "configuracoes", "vendedores")
         const docSnapVendedores = await getDoc(docRefVendedores)
         if (docSnapVendedores.exists() && docSnapVendedores.data().lista) {
@@ -83,6 +87,18 @@ export default function Venda() {
         } else {
           setListaVendedores([])
         }
+
+        // Carrega Senhas do Cofre
+        const docRefSeg = doc(db, "configuracoes", "seguranca")
+        const docSnapSeg = await getDoc(docRefSeg)
+        if (docSnapSeg.exists()) {
+          const dadosSeg = docSnapSeg.data()
+          setSenhasAutorizadas({
+            proprietario: dadosSeg.senhaProprietario || dadosSeg.senhaMaster || '',
+            gerente: dadosSeg.senhaGerente || ''
+          })
+        }
+
       } catch (error) {
         console.error("Erro ao carregar dados na frente de caixa:", error)
         setErro("Falha ao sincronizar dados com o servidor.")
@@ -173,7 +189,6 @@ export default function Venda() {
       return
     }
     setErro('')
-    // Removido o preenchimento automático do dinheiro para iniciar sempre zerado
     setModalConfirmacao(true)
   }
 
@@ -185,13 +200,19 @@ export default function Venda() {
     const totalPago = calcularTotalPago()
 
     if (totalPago < totalVenda - 0.01) {
-      setErro(`Falta R$ ${(totalVenda - totalPago).toFixed(2)} para completar o pagamento.`)
+      setErro(`Falta saldo para completar o pagamento.`)
       return
     }
 
-    if (aplicarDesconto && calcularDescontoReal() > 0 && senhaDesconto !== '0000') {
-      setErro('Senha de desconto incorreta! A venda não pode ser finalizada.')
-      return
+    // Validação de segurança do Desconto
+    if (aplicarDesconto && calcularDescontoReal() > 0) {
+      const isProprietario = senhasAutorizadas.proprietario && senhaDesconto === senhasAutorizadas.proprietario;
+      const isGerente = senhasAutorizadas.gerente && senhaDesconto === senhasAutorizadas.gerente;
+      
+      if (!isProprietario && !isGerente) {
+        setErro('Senha incorreta! Apenas o Proprietário ou Gerente podem autorizar descontos.')
+        return
+      }
     }
 
     setProcessando(true)
@@ -222,6 +243,7 @@ export default function Venda() {
           nome: item.nome,
           codigoBarras: item.codigoBarras || '',
           preco: Number(item.preco), 
+          custo: Number(item.custo || item.precoCusto || 0),
           quantidadeComprada: item.quantidadeComprada,
           categoria: item.categorias ? item.categorias.join(', ') : (item.categoria || 'Sem categoria')
         })),
@@ -245,7 +267,6 @@ export default function Venda() {
       setErro('')
       setModalConfirmacao(false)
 
-      // Reduzido para 500ms
       setTimeout(() => setSucesso(false), 500)
     } catch (error) {
       console.error("Erro crítico ao finalizar venda:", error)
@@ -253,6 +274,11 @@ export default function Venda() {
     } finally {
       setProcessando(false)
     }
+  }
+
+  const fecharModal = () => {
+    setModalConfirmacao(false)
+    setErro('')
   }
 
   const formatoMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(valor) || 0)
@@ -270,14 +296,17 @@ export default function Venda() {
         </div>
       )}
 
-      {/* ÁREA PRINCIPAL */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px', position: 'relative' }}>
         <header>
           <h1 style={{ fontSize: isMobile ? '24px' : '28px', color: '#1e1b4b', margin: 0 }}>Frente de Caixa</h1>
           <p style={{ color: '#64748b', marginTop: '4px', fontSize: isMobile ? '13px' : '15px' }}>Terminal de vendas rápido e direto.</p>
         </header>
 
-        {erro && <div style={{ background: '#fee2e2', color: '#ef4444', padding: '16px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold' }}><AlertCircle size={20} />{erro}</div>}
+        {erro && !modalConfirmacao && (
+          <div style={{ background: '#fee2e2', color: '#ef4444', padding: '16px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold' }}>
+            <AlertCircle size={20} />{erro}
+          </div>
+        )}
 
         <div style={{ position: 'relative', zIndex: 50 }}>
           <div style={{ display: 'flex', alignItems: 'center', background: 'white', padding: '16px 20px', borderRadius: '16px', width: '100%', boxShadow: '0 4px 10px rgba(0,0,0,0.05)', border: '2px solid #4f46e5', boxSizing: 'border-box' }}>
@@ -364,7 +393,6 @@ export default function Venda() {
         </div>
       </div>
 
-      {/* ÁREA LATERAL / INFERIOR */}
       <div style={{ width: isMobile ? '100%' : '380px', minWidth: isMobile ? '100%' : '380px', background: 'white', borderRadius: '24px', padding: '24px', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
         
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -388,7 +416,7 @@ export default function Venda() {
         <div style={{ marginTop: '24px', borderTop: '2px dashed #cbd5e1', paddingTop: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: '20px', color: '#1e1b4b', fontWeight: '900' }}>TOTAL</span>
-            <span style={{ fontSize: '32px', color: '#000000', fontWeight: '900' }}> {/* Alterado para Preto */}
+            <span style={{ fontSize: '32px', color: '#000000', fontWeight: '900' }}>
               {formatoMoeda(calcularSubtotal())}
             </span>
           </div>
@@ -399,7 +427,6 @@ export default function Venda() {
         </div>
       </div>
 
-      {/* MODAL DE PAGAMENTO FINAL - AMPLIADO E EM DUAS COLUNAS */}
       {modalConfirmacao && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 6000, padding: isMobile ? '16px' : '20px' }}>
           <div style={{ background: 'white', padding: isMobile ? '24px' : '32px', borderRadius: '24px', width: '100%', maxWidth: '900px', maxHeight: '95vh', overflowY: 'auto', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column' }}>
@@ -408,13 +435,18 @@ export default function Venda() {
               <h3 style={{ fontSize: isMobile ? '20px' : '24px', color: '#1e1b4b', display: 'flex', alignItems: 'center', gap: '10px', margin: 0, fontWeight: '900' }}>
                 <Receipt size={28} color="#4f46e5" /> Fechar Pagamento
               </h3>
-              <button onClick={() => setModalConfirmacao(false)} style={{ background: '#f1f5f9', border: 'none', borderRadius: '50%', padding: '8px', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={20} /></button>
+              <button onClick={fecharModal} style={{ background: '#f1f5f9', border: 'none', borderRadius: '50%', padding: '8px', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={20} /></button>
             </div>
 
-            {/* Grid 2 Colunas para não precisar rolar a tela */}
+            {/* AVISO DE ERRO DENTRO DO MODAL */}
+            {erro && (
+              <div style={{ background: '#fee2e2', color: '#ef4444', padding: '16px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', marginBottom: '24px' }}>
+                <AlertCircle size={20} />{erro}
+              </div>
+            )}
+
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1.2fr', gap: '32px' }}>
               
-              {/* Lado Esquerdo: Totais, Desconto e Atendente */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '16px', border: '1px solid #e2e8f0' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -448,7 +480,7 @@ export default function Venda() {
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fee2e2', padding: '0 12px', borderRadius: '8px', border: '1px solid #ef4444', flex: 1 }}>
                             <Lock size={16} color="#ef4444"/>
                             <input 
-                              type="password" placeholder="Senha (0000)" value={senhaDesconto} onChange={(e) => setSenhaDesconto(e.target.value)}
+                              type="password" placeholder="Senha do Gerente ou Proprietário" value={senhaDesconto} onChange={(e) => setSenhaDesconto(e.target.value)}
                               style={{ border: 'none', outline: 'none', width: '100%', padding: '10px 0', fontSize: '14px', background: 'transparent' }}
                             />
                           </div>
@@ -459,7 +491,7 @@ export default function Venda() {
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '2px dashed #cbd5e1', paddingTop: '16px', marginTop: '4px' }}>
                     <span style={{ fontSize: '18px', color: '#1e1b4b', fontWeight: '900' }}>TOTAL A PAGAR:</span>
-                    <span style={{ fontSize: '32px', color: '#000000', fontWeight: '900' }}> {/* Alterado para Preto */}
+                    <span style={{ fontSize: '32px', color: '#000000', fontWeight: '900' }}>
                       {formatoMoeda(calcularTotalFinal())}
                     </span>
                   </div>
@@ -484,7 +516,6 @@ export default function Venda() {
                 </div>
               </div>
 
-              {/* Lado Direito: Pagamentos, Troco e Botões */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 <div>
                   <h4 style={{ fontSize: '14px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase', marginBottom: '16px', marginTop: 0 }}>Métodos de Pagamento</h4>
@@ -532,9 +563,8 @@ export default function Venda() {
                   )}
                 </div>
 
-                {/* Botões de Ação Final (Ficam logo abaixo do bloco de pagamento) */}
                 <div style={{ display: 'flex', gap: '16px', marginTop: 'auto', flexDirection: isMobile ? 'column' : 'row' }}>
-                  <button type="button" disabled={processando} onClick={() => setModalConfirmacao(false)} style={{ flex: 1, background: 'transparent', color: '#64748b', border: '2px solid #cbd5e1', padding: '18px', borderRadius: '16px', fontWeight: 'bold', cursor: 'pointer', fontSize: '16px' }}>
+                  <button type="button" disabled={processando} onClick={fecharModal} style={{ flex: 1, background: 'transparent', color: '#64748b', border: '2px solid #cbd5e1', padding: '18px', borderRadius: '16px', fontWeight: 'bold', cursor: 'pointer', fontSize: '16px' }}>
                     Cancelar
                   </button>
                   <button id="btn-confirmar-venda" type="submit" onClick={confirmarEFinalizarVenda} disabled={processando || calcularTotalPago() < calcularTotalFinal() - 0.01} style={{ flex: 1.5, background: (processando || calcularTotalPago() < calcularTotalFinal() - 0.01) ? '#94a3b8' : '#10b981', color: 'white', border: 'none', padding: '18px', borderRadius: '16px', fontWeight: '900', cursor: (processando || calcularTotalPago() < calcularTotalFinal() - 0.01) ? 'not-allowed' : 'pointer', fontSize: '18px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', boxShadow: (processando || calcularTotalPago() < calcularTotalFinal() - 0.01) ? 'none' : '0 10px 15px -3px rgba(16, 185, 129, 0.4)' }}>

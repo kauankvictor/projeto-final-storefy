@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Search, Plus, Edit2, FileDown, X, Settings, Trash2, Eye, EyeOff, Star, Palette, Sheet } from 'lucide-react'
+import { Search, Plus, Edit2, FileDown, X, Settings, Trash2, Star, Palette, Sheet } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import { collection, getDocs, doc, getDoc, updateDoc, setDoc } from 'firebase/firestore'
@@ -15,8 +15,6 @@ export default function Estoque() {
   const [produtoSelecionado, setProdutoSelecionado] = useState(null)
   
   const [categoriasFavoritas, setCategoriasFavoritas] = useState([])
-  const [categoriasOcultas, setCategoriasOcultas] = useState([])
-  const [catalogoOculto, setCatalogoOculto] = useState(false)
   const [corPrincipal, setCorPrincipal] = useState('#2563eb') // Azul como padrão
   
   const [modalGerenciarCategorias, setModalGerenciarCategorias] = useState(false)
@@ -71,7 +69,6 @@ export default function Estoque() {
           const data = docSnapLoja.data()
           setDadosLoja(prev => ({ ...prev, ...data }))
           if (data.corPrincipal) setCorPrincipal(data.corPrincipal)
-          if (data.catalogoOculto !== undefined) setCatalogoOculto(data.catalogoOculto)
         }
         
         const docRefCat = doc(db, "configuracoes", "categorias")
@@ -79,7 +76,6 @@ export default function Estoque() {
         if (docSnapCat.exists()) {
           const data = docSnapCat.data()
           if (data.favoritas) setCategoriasFavoritas(data.favoritas)
-          if (data.ocultas) setCategoriasOcultas(data.ocultas)
         }
       } catch (error) {
         console.error("Erro ao carregar dados:", error)
@@ -148,7 +144,7 @@ export default function Estoque() {
   const favs = catArray.filter(c => categoriasFavoritas.includes(c)).sort((a, b) => a.localeCompare(b))
   const others = catArray.filter(c => !categoriasFavoritas.includes(c)).sort((a, b) => a.localeCompare(b))
   
-  const categoriasUnicas = ['Todas', 'Promoções', ...favs, ...others]
+  const categoriasUnicas = ['Todas', ...favs, ...others]
   const listaGerenciavel = [...favs, ...others]
 
   const produtosFiltrados = produtos.filter(produto => {
@@ -165,8 +161,6 @@ export default function Estoque() {
     let matchCategoria = false
     if (categoriaFiltro === 'Todas') {
       matchCategoria = true
-    } else if (categoriaFiltro === 'Promoções') {
-      matchCategoria = Number(produto.precoAntigo) > Number(produto.preco)
     } else {
       matchCategoria = (produto.categorias && produto.categorias.includes(categoriaFiltro)) || produto.categoria === categoriaFiltro
     }
@@ -183,7 +177,6 @@ export default function Estoque() {
   const getProdutosParaExportar = () => {
     return produtos.filter(produto => {
       if (categoriaExportacao === 'Todas') return true;
-      if (categoriaExportacao === 'Promoções') return Number(produto.precoAntigo) > Number(produto.preco);
       return (produto.categorias && produto.categorias.includes(categoriaExportacao)) || produto.categoria === categoriaExportacao;
     });
   }
@@ -191,6 +184,87 @@ export default function Estoque() {
   const gerarPDFEstoque = () => {
     const listaExportar = getProdutosParaExportar()
     const janelaImpressao = window.open('', '_blank')
+
+    let conteudoTabela = '';
+
+    if (categoriaExportacao === 'Todas') {
+      // Agrupar produtos por categoria
+      const grupos = {};
+      listaExportar.forEach(p => {
+        const cat = (p.categorias && p.categorias.length > 0) ? p.categorias[0] : (p.categoria || 'Sem Categoria');
+        if (!grupos[cat]) grupos[cat] = [];
+        grupos[cat].push(p);
+      });
+
+      // Ordenar categorias em ordem alfabética e gerar as linhas
+      Object.keys(grupos).sort().forEach(cat => {
+        conteudoTabela += `
+          <tr>
+            <td colspan="6" style="background: #e2e8f0; font-weight: bold; text-align: center; color: #1e1b4b; font-size: 14px; padding: 12px;">
+              CATEGORIA: ${cat.toUpperCase()}
+            </td>
+          </tr>
+          <tr>
+            <th>Produto</th>
+            <th>Cód. Barras</th>
+            <th>Qtd</th>
+            <th>Custo</th>
+            <th>Preço</th>
+            <th>Lucro</th>
+          </tr>
+        `;
+        grupos[cat].forEach(p => {
+          const custo = Number(p.custo) || 0;
+          const preco = Number(p.preco) || 0;
+          const lucro = preco - custo;
+          conteudoTabela += `
+            <tr>
+              <td style="font-weight: 600; color: #1e1b4b;">${p.nome}</td>
+              <td>${p.codigoBarras || '-'}</td>
+              <td style="color: #000000; font-weight: bold;">
+                ${p.quantidade > 0 ? p.quantidade + ' un' : '0 un'}
+              </td>
+              <td>${formatoMoeda(custo)}</td>
+              <td style="font-weight: bold;">${formatoMoeda(preco)}</td>
+              <td style="color: ${lucro >= 0 ? '#059669' : '#ef4444'}; font-weight: bold;">${formatoMoeda(lucro)}</td>
+            </tr>
+          `;
+        });
+      });
+    } else {
+      // Quando for uma categoria específica, gerar as linhas normais
+      if (listaExportar.length === 0) {
+        conteudoTabela = '<tr><td colspan="6" style="text-align: center; color: #94a3b8;">Nenhum produto encontrado.</td></tr>';
+      } else {
+        conteudoTabela += `
+          <tr>
+            <th>Produto</th>
+            <th>Cód. Barras</th>
+            <th>Qtd</th>
+            <th>Custo</th>
+            <th>Preço</th>
+            <th>Lucro</th>
+          </tr>
+        `;
+        listaExportar.forEach(p => {
+          const custo = Number(p.custo) || 0;
+          const preco = Number(p.preco) || 0;
+          const lucro = preco - custo;
+          conteudoTabela += `
+            <tr>
+              <td style="font-weight: 600; color: #1e1b4b;">${p.nome}</td>
+              <td>${p.codigoBarras || '-'}</td>
+              <td style="color: #000000; font-weight: bold;">
+                ${p.quantidade > 0 ? p.quantidade + ' un' : '0 un'}
+              </td>
+              <td>${formatoMoeda(custo)}</td>
+              <td style="font-weight: bold;">${formatoMoeda(preco)}</td>
+              <td style="color: ${lucro >= 0 ? '#059669' : '#ef4444'}; font-weight: bold;">${formatoMoeda(lucro)}</td>
+            </tr>
+          `;
+        });
+      }
+    }
 
     const htmlPDF = `
       <html>
@@ -201,7 +275,7 @@ export default function Estoque() {
             .header { border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 30px; display: flex; justify-content: space-between; }
             .header h1 { margin: 0; color: #1e1b4b; font-size: 26px; }
             .header p { margin: 4px 0; color: #64748b; font-size: 14px; }
-            .titulo-relatorio { text-align: center; background: #f1f5f9; padding: 12px; border-radius: 8px; font-weight: bold; font-size: 18px; color: #2563eb; margin-bottom: 30px; text-transform: uppercase; }
+            .titulo-relatorio { text-align: center; background: #f1f5f9; padding: 12px; border-radius: 8px; font-weight: bold; font-size: 18px; color: #000000; margin-bottom: 30px; text-transform: uppercase; }
             .tabela-estoque { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
             .tabela-estoque th, .tabela-estoque td { border: 1px solid #e2e8f0; padding: 8px 10px; text-align: left; font-size: 13px; }
             .tabela-estoque th { background: #f8fafc; color: #475569; font-size: 12px; text-transform: uppercase; }
@@ -226,36 +300,8 @@ export default function Estoque() {
           <div class="titulo-relatorio">Relatório Analítico (${categoriaExportacao})</div>
 
           <table class="tabela-estoque">
-            <thead>
-              <tr>
-                <th>Produto</th>
-                <th>Cód. Barras</th>
-                <th>Qtd</th>
-                <th>Custo</th>
-                <th>Preço</th>
-                <th>Lucro</th>
-                <th>Cadastrado em</th>
-              </tr>
-            </thead>
             <tbody>
-              ${listaExportar.length === 0 ? '<tr><td colspan="7" style="text-align: center; color: #94a3b8;">Nenhum produto encontrado.</td></tr>' : 
-                listaExportar.map(p => {
-                  const custo = Number(p.custo) || 0;
-                  const preco = Number(p.preco) || 0;
-                  const lucro = preco - custo;
-                  return `
-                  <tr>
-                    <td style="font-weight: 600; color: #1e1b4b;">${p.nome} <br/><small style="font-weight: normal; color: #64748b;">${p.categorias ? p.categorias.join(', ') : p.categoria}</small></td>
-                    <td>${p.codigoBarras || '-'}</td>
-                    <td style="color: ${p.quantidade > 0 ? '#059669' : '#ef4444'}; font-weight: bold;">
-                      ${p.quantidade > 0 ? p.quantidade + ' un' : 'Esgotado'}
-                    </td>
-                    <td>${formatoMoeda(custo)}</td>
-                    <td style="font-weight: bold;">${formatoMoeda(preco)}</td>
-                    <td style="color: ${lucro >= 0 ? '#059669' : '#ef4444'}; font-weight: bold;">${formatoMoeda(lucro)}</td>
-                    <td>${formatarDataBrasil(p.dataCadastro)}</td>
-                  </tr>
-                `}).join('')}
+              ${conteudoTabela}
             </tbody>
           </table>
 
@@ -326,23 +372,6 @@ export default function Estoque() {
     await setDoc(doc(db, "configuracoes", "categorias"), { favoritas: novasFavoritas }, { merge: true })
   }
 
-  const toggleOcultarCategoria = async (cat) => {
-    let novasOcultas = [...categoriasOcultas]
-    if (novasOcultas.includes(cat)) {
-      novasOcultas = novasOcultas.filter(c => c !== cat)
-    } else {
-      novasOcultas.push(cat)
-    }
-    setCategoriasOcultas(novasOcultas)
-    await setDoc(doc(db, "configuracoes", "categorias"), { ocultas: novasOcultas }, { merge: true })
-  }
-
-  const handleToggleCatalogoOculto = async (e) => {
-    const valor = e.target.checked
-    setCatalogoOculto(valor)
-    await setDoc(doc(db, "configuracoes", "loja"), { catalogoOculto: valor }, { merge: true })
-  }
-
   const renomearCategoria = async (nomeAntigo) => {
     const novoNome = prompt(`Renomear "${nomeAntigo}" para:`, nomeAntigo)
     if (!novoNome || novoNome.trim() === '' || novoNome === nomeAntigo) return
@@ -373,13 +402,6 @@ export default function Estoque() {
         await setDoc(doc(db, "configuracoes", "categorias"), { favoritas: novasFavoritas }, { merge: true })
       }
 
-      let novasOcultas = [...categoriasOcultas]
-      if (novasOcultas.includes(nomeAntigo)) {
-        novasOcultas = novasOcultas.map(c => c === nomeAntigo ? novoNome.trim() : c)
-        setCategoriasOcultas(novasOcultas)
-        await setDoc(doc(db, "configuracoes", "categorias"), { ocultas: novasOcultas }, { merge: true })
-      }
-      
       const pSnapshot = await getDocs(collection(db, "produtos"))
       setProdutos(pSnapshot.docs.map(d => ({ id: d.id, ...d.data() })))
     } catch (error) {
@@ -413,10 +435,8 @@ export default function Estoque() {
       
       let novasFavoritas = categoriasFavoritas.filter(c => c !== nomeExcluir)
       setCategoriasFavoritas(novasFavoritas)
-      let novasOcultas = categoriasOcultas.filter(c => c !== nomeExcluir)
-      setCategoriasOcultas(novasOcultas)
-
-      await setDoc(doc(db, "configuracoes", "categorias"), { favoritas: novasFavoritas, ocultas: novasOcultas }, { merge: true })
+      
+      await setDoc(doc(db, "configuracoes", "categorias"), { favoritas: novasFavoritas }, { merge: true })
       
       const pSnapshot = await getDocs(collection(db, "produtos"))
       setProdutos(pSnapshot.docs.map(d => ({ id: d.id, ...d.data() })))
@@ -437,27 +457,15 @@ export default function Estoque() {
             <h2 style={{ fontSize: '20px', color: '#1e1b4b', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px', marginTop: 0 }}>
               <Settings size={24} color={corPrincipal} /> Gerenciar Categorias
             </h2>
-
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: catalogoOculto ? '#fee2e2' : '#f8fafc', padding: '16px', borderRadius: '12px', border: `1px solid ${catalogoOculto ? '#ef4444' : '#e2e8f0'}`, marginBottom: '16px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontWeight: 'bold', color: catalogoOculto ? '#b91c1c' : '#1e1b4b' }}>Ocultar Todo o Catálogo</span>
-                <span style={{ fontSize: '12px', color: catalogoOculto ? '#ef4444' : '#64748b' }}>Ative para esconder todos os produtos da visão do cliente.</span>
-              </div>
-              <input type="checkbox" checked={catalogoOculto} onChange={handleToggleCatalogoOculto} style={{ width: '24px', height: '24px', accentColor: '#ef4444', cursor: 'pointer' }} />
-            </div>
             
             <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingRight: '4px' }}>
               {listaGerenciavel.map((cat) => {
                 const isFav = categoriasFavoritas.includes(cat);
-                const isOculta = categoriasOcultas.includes(cat);
 
                 return (
-                  <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: isOculta ? '#f1f5f9' : (isFav ? hexToRgba(corPrincipal, 0.05) : '#f8fafc'), padding: '12px', borderRadius: '8px', border: isFav && !isOculta ? `1px solid ${corPrincipal}` : '1px solid #e2e8f0', flexWrap: 'wrap', gap: '12px', opacity: isOculta ? 0.6 : 1, transition: '0.2s' }}>
-                    <span style={{ fontWeight: 'bold', color: isOculta ? '#94a3b8' : (isFav ? corPrincipal : '#1e1b4b'), wordBreak: 'break-all', textDecoration: isOculta ? 'line-through' : 'none' }}>{cat}</span>
+                  <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: isFav ? hexToRgba(corPrincipal, 0.05) : '#f8fafc', padding: '12px', borderRadius: '8px', border: isFav ? `1px solid ${corPrincipal}` : '1px solid #e2e8f0', flexWrap: 'wrap', gap: '12px', transition: '0.2s' }}>
+                    <span style={{ fontWeight: 'bold', color: isFav ? corPrincipal : '#1e1b4b', wordBreak: 'break-all' }}>{cat}</span>
                     <div style={{ display: 'flex', gap: '6px' }}>
-                      <button onClick={() => toggleOcultarCategoria(cat)} style={{ background: 'white', border: '1px solid #cbd5e1', padding: '6px', borderRadius: '6px', cursor: 'pointer', color: isOculta ? '#ef4444' : '#64748b' }}>
-                        {isOculta ? <EyeOff size={16} /> : <Eye size={16} />}
-                      </button>
                       <button onClick={() => toggleFavorita(cat)} style={{ background: isFav ? hexToRgba(corPrincipal, 0.1) : 'white', border: isFav ? `1px solid ${corPrincipal}` : '1px solid #cbd5e1', padding: '6px', borderRadius: '6px', cursor: 'pointer', color: isFav ? corPrincipal : '#94a3b8' }}>
                         <Star size={16} fill={isFav ? corPrincipal : 'none'} color={isFav ? corPrincipal : '#94a3b8'} />
                       </button>
@@ -522,7 +530,7 @@ export default function Estoque() {
                 <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '500' }}>
                   {produtoSelecionado.categorias ? produtoSelecionado.categorias.join(' • ') : produtoSelecionado.categoria}
                 </span>
-                <h2 style={{ fontSize: '20px', color: '#1e1b4b', margin: '4px 0 0 0', fontWeight: 'bold' }}>{produtoSelecionado.nome}</h2>
+                <h2 style={{ fontSize: '24px', color: '#1e1b4b', margin: '4px 0 0 0', fontWeight: 'bold' }}>{produtoSelecionado.nome}</h2>
                 
                 <div style={{ marginTop: '4px', fontSize: '15px', color: '#64748b', fontFamily: 'monospace', fontWeight: 'bold' }}>
                   {produtoSelecionado.codigoBarras || 'S/N'}
@@ -536,9 +544,9 @@ export default function Estoque() {
                       {formatoMoeda(produtoSelecionado.precoAntigo)}
                     </span>
                   )}
-                  <span style={{ fontSize: '24px', color: '#2563eb', fontWeight: '900' }}>{formatoMoeda(produtoSelecionado.preco)}</span>
+                  <span style={{ fontSize: '24px', color: '#000000', fontWeight: '900' }}>{formatoMoeda(produtoSelecionado.preco)}</span>
                 </div>
-                <span style={{ background: produtoSelecionado.quantidade > 0 ? '#d1fae5' : '#fee2e2', color: produtoSelecionado.quantidade > 0 ? '#059669' : '#dc2626', padding: '6px 12px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold' }}>
+                <span style={{ background: produtoSelecionado.quantidade > 0 ? '#dbeafe' : '#fee2e2', color: produtoSelecionado.quantidade > 0 ? '#2563eb' : '#dc2626', padding: '6px 12px', borderRadius: '8px', fontSize: '14px', fontWeight: 'bold' }}>
                   {produtoSelecionado.quantidade > 0 ? `Estoque: ${produtoSelecionado.quantidade}` : 'Esgotado'}
                 </span>
               </div>
@@ -688,7 +696,7 @@ export default function Estoque() {
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
-                  <h3 style={{ fontSize: '16px', color: '#1e1b4b', fontWeight: 'bold', margin: '0', lineHeight: '1.3' }}>
+                  <h3 style={{ fontSize: '20px', color: '#1e1b4b', fontWeight: 'bold', margin: '0', lineHeight: '1.2' }}>
                     {produto.nome}
                   </h3>
                   {temDesconto && <span style={{ color: '#ef4444', fontWeight: 'bold', fontSize: '10px', background: '#fee2e2', padding: '2px 6px', borderRadius: '4px' }}>Promo</span>}
@@ -701,10 +709,10 @@ export default function Estoque() {
                 </div>
                 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
-                  <span style={{ fontSize: '20px', color: '#2563eb', fontWeight: '900' }}>
+                  <span style={{ fontSize: '20px', color: '#000000', fontWeight: '900' }}>
                     {formatoMoeda(preco)}
                   </span>
-                  <span style={{ fontSize: '12px', color: produto.quantidade > 0 ? '#059669' : '#ef4444', fontWeight: 'bold', background: produto.quantidade > 0 ? '#d1fae5' : '#fee2e2', padding: '4px 8px', borderRadius: '6px' }}>
+                  <span style={{ fontSize: '12px', color: produto.quantidade > 0 ? '#0f1013' : '#ef4444', fontWeight: 'bold', background: produto.quantidade > 0 ? '#ddf1fa' : '#fee2e2', padding: '4px 8px', borderRadius: '6px' }}>
                     Qtd: {produto.quantidade}
                   </span>
                 </div>
